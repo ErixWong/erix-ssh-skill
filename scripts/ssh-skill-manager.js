@@ -12,8 +12,10 @@ const path = require('path');
 const os = require('os');
 const db = require('./db');
 
-const PID_FILE = path.join(os.homedir(), '.ssh-skill', 'manager.pid');
-const COMMANDS_DIR = path.join(os.homedir(), '.ssh-skill', 'commands');
+// Data directory paths
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const PID_FILE = path.join(DATA_DIR, 'manager.pid');
+const COMMANDS_DIR = path.join(DATA_DIR, 'commands');
 
 // Active SSH connections
 const connections = new Map();

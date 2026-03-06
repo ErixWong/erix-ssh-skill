@@ -4,7 +4,10 @@ node_modules/
 # Build output
 dist/
 
-# Database files (user data)
+# Data directory (database, pid files, etc.)
+data/
+
+# Database files
 *.db
 *.db-wal
 *.db-shm

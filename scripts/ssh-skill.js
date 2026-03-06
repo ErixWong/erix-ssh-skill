@@ -8,10 +8,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const db = require('./db');
 
-const COMMANDS_DIR = path.join(os.homedir(), '.ssh-skill', 'commands');
+// Data directory paths
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const COMMANDS_DIR = path.join(DATA_DIR, 'commands');
 const MANAGER_SCRIPT = path.join(__dirname, 'ssh-skill-manager.js');
 
 /**
