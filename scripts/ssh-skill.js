@@ -75,7 +75,7 @@ function sendCommand(cmd) {
 function startManager() {
   const { spawn } = require('child_process');
   
-  const pidFile = path.join(os.homedir(), '.ssh-skill', 'manager.pid');
+  const pidFile = path.join(DATA_DIR, 'manager.pid');
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'));
     try {
@@ -483,7 +483,7 @@ function help() {
   console.log('  delete             Delete a session');
   console.log('  list               List all sessions');
   console.log('');
-  console.log('Storage: ~/.ssh-skill/ssh-skill.db (SQLite)');
+  console.log('Storage: ./data/ssh-skill.db (SQLite)');
   console.log('');
   console.log('Examples:');
   console.log('  node ssh-skill.js start-manager');
