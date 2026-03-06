@@ -387,6 +387,41 @@ function listTasks(params) {
 }
 
 /**
+ * Reconnect to a disconnected session
+ */
+function reconnect(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  if (session.status === 'connected') {
+    return output({ success: false, error: 'Session is already connected' });
+  }
+  
+  if (!session.config) {
+    return output({ success: false, error: 'Session config not found, cannot reconnect' });
+  }
+  
+  // Send connect command with existing config
+  sendCommand({
+    action: 'connect',
+    session_id: sessionId,
+    config: session.config
+  });
+  
+  db.updateSessionStatus(sessionId, 'connecting');
+  
+  output({
+    success: true,
+    session_id: sessionId,
+    message: `Reconnecting to ${session.host}`
+  });
+}
+
+/**
  * Disconnect from a server
  */
 function disconnect(params) {
@@ -442,6 +477,7 @@ function help() {
   console.log('  mark-read          Mark messages as read');
   console.log('  task-status        Get task status (summary)');
   console.log('  tasks              List tasks');
+  console.log('  reconnect          Reconnect a disconnected session');
   console.log('  disconnect         Disconnect from server');
   console.log('  delete             Delete a session');
   console.log('  list               List all sessions');
@@ -483,6 +519,7 @@ async function main() {
     case 'mark-read': markRead(params); break;
     case 'task-status': taskStatus(params); break;
     case 'tasks': listTasks(params); break;
+    case 'reconnect': reconnect(params); break;
     case 'disconnect': disconnect(params); break;
     case 'delete': deleteSession(params); break;
     case 'list': list(); break;
