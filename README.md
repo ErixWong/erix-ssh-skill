@@ -1,44 +1,90 @@
 # SSH Skill
 
-> Claude Skill for SSH remote server management with SQLite storage
+[English](#english) | [中文](#中文)
 
-## 特点
+---
 
-- **SQLite 存储** - 高性能、结构化查询
-- **会话持久化** - SSH 连接保持在后台运行
-- **异步执行** - 命令立即返回，不阻塞
-- **消息历史** - 支持复杂查询和搜索
-- **已读未读** - 消息状态追踪
+<a name="english"></a>
+## English
 
-## 存储结构
+> Claude Skill for SSH remote server management with session persistence, async execution, and SQLite storage.
 
-```
-~/.ssh-skill/
-├── ssh-skill.db       # SQLite 数据库
-├── manager.pid        # 管理器进程 ID
-└── commands/          # 命令队列（临时）
-```
+### Features
 
-## 数据库表
+- **Session Management** - Persistent SSH connections with auto-reconnect
+- **Async Execution** - Non-blocking command execution with task tracking
+- **SQLite Storage** - Structured data storage with powerful queries
+- **Message History** - Full command/output history with read/unread status
+- **Reconnect Support** - Reconnect disconnected sessions without re-entering credentials
 
-```sql
--- 会话表
-sessions (id, host, port, username, status, config, created_at, updated_at)
-
--- 任务表  
-tasks (id, session_id, command, status, output, stderr, exit_code, created_at)
-
--- 消息表
-messages (id, session_id, task_id, timestamp, type, content, stream, read)
-```
-
-## 快速开始
+### Installation
 
 ```bash
-# 安装依赖
+git clone https://github.com/ErixWong/erix-ssh-skill.git
+cd erix-ssh-skill
 npm install
+```
 
-# 启动管理器
+### Quick Start
+
+```bash
+# Start the background manager
+node scripts/ssh-skill.js start-manager
+
+# Connect to a server
+node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
+
+# Execute a command
+node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
+
+# Get command output
+node scripts/ssh-skill.js output --task task_xxx
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `start-manager` | Start background manager |
+| `connect` | Connect to server |
+| `disconnect` | Disconnect from server |
+| `reconnect` | Reconnect a disconnected session |
+| `exec` | Execute command (async) |
+| `history` | Get command history |
+| `output` | Get task output |
+| `list` | List all sessions |
+
+### Requirements
+
+- Node.js 18+
+
+---
+
+<a name="中文"></a>
+## 中文
+
+> Claude SSH 技能，用于远程服务器管理，支持会话持久化、异步执行和 SQLite 存储。
+
+### 特性
+
+- **会话管理** - 持久化 SSH 连接，支持自动重连
+- **异步执行** - 非阻塞命令执行，任务追踪
+- **SQLite 存储** - 结构化数据存储，支持复杂查询
+- **消息历史** - 完整的命令/输出历史，已读未读状态
+- **重连支持** - 断开后重连，无需重新输入凭据
+
+### 安装
+
+```bash
+git clone https://github.com/ErixWong/erix-ssh-skill.git
+cd erix-ssh-skill
+npm install
+```
+
+### 快速开始
+
+```bash
+# 启动后台管理器
 node scripts/ssh-skill.js start-manager
 
 # 连接服务器
@@ -47,27 +93,29 @@ node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
 # 执行命令
 node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
 
-# 查看命令历史
-node scripts/ssh-skill.js history --session sess_xxx
-
-# 获取任务输出
+# 获取命令输出
 node scripts/ssh-skill.js output --task task_xxx
 ```
 
-## 核心命令
+### 命令列表
 
 | 命令 | 说明 |
 |------|------|
-| `history` | 获取命令清单（含 task_id） |
-| `output --task ID` | 根据 task_id 获取详细结果 |
-| `read` | 读取消息（支持过滤） |
-| `search` | 搜索消息内容 |
-| `stats` | 会话统计 |
+| `start-manager` | 启动后台管理器 |
+| `connect` | 连接服务器 |
+| `disconnect` | 断开连接 |
+| `reconnect` | 重连已断开的会话 |
+| `exec` | 执行命令（异步） |
+| `history` | 获取命令历史 |
+| `output` | 获取任务输出 |
+| `list` | 列出所有会话 |
 
-## 许可证
+### 系统要求
 
-MIT License
+- Node.js 18+
 
 ---
 
-✌Bazinga！
+## License
+
+MIT
