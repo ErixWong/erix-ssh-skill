@@ -212,7 +212,8 @@ function exec(params) {
     command: params.command
   });
   
-  output({ success: true, task_id: taskId, message: 'Command submitted' });
+  // 返回 success，不暴露 task_id 给 LLM（内部仍用 task追踪）
+  output({ success: true });
 }
 
 /**
@@ -468,20 +469,17 @@ function help() {
   console.log('Commands:');
   console.log('  start-manager      Start the background manager');
   console.log('  stop-manager       Stop the background manager');
-  console.log('  connect            Connect to a server');
-  console.log('  exec               Execute a command');
-  console.log('  read               Read messages');
-  console.log('  history            Get command history (list with task_id)');
-  console.log('  output             Get task output (detailed)');
+  console.log('  connect            Connect to a server (returns session_id)');
+  console.log('  exec               Execute a command (async)');
+  console.log('  read               Read messages (use --unread-only)');
   console.log('  search             Search messages');
   console.log('  stats              Get session statistics');
   console.log('  mark-read          Mark messages as read');
-  console.log('  task-status        Get task status (summary)');
-  console.log('  tasks              List tasks');
   console.log('  reconnect          Reconnect a disconnected session');
   console.log('  disconnect         Disconnect from server');
   console.log('  delete             Delete a session');
-  console.log('  list               List all sessions');
+  console.log('');
+  console.log('IMPORTANT: session_id is the access credential. Save it!');
   console.log('');
   console.log('Storage: ./data/ssh-skill.db (SQLite)');
   console.log('');
@@ -489,8 +487,7 @@ function help() {
   console.log('  node ssh-skill.js start-manager');
   console.log('  node ssh-skill.js connect --host 192.168.1.100 --username admin');
   console.log('  node ssh-skill.js exec --session sess_xxx --command "df -h"');
-  console.log('  node ssh-skill.js history --session sess_xxx');
-  console.log('  node ssh-skill.js output --task task_xxx');
+  console.log('  node ssh-skill.js read --session sess_xxx --unread-only --mark-read');
 }
 
 /**
@@ -513,17 +510,24 @@ async function main() {
     case 'connect': connect(params); break;
     case 'exec': exec(params); break;
     case 'read': read(params); break;
-    case 'history': history(params); break;
-    case 'output': taskOutput(params); break;
     case 'search': search(params); break;
     case 'stats': stats(params); break;
     case 'mark-read': markRead(params); break;
-    case 'task-status': taskStatus(params); break;
-    case 'tasks': listTasks(params); break;
     case 'reconnect': reconnect(params); break;
     case 'disconnect': disconnect(params); break;
     case 'delete': deleteSession(params); break;
-    case 'list': list(); break;
+    // 以下命令已废弃，保留向后兼容但提示使用 read
+    case 'history':
+      output({ success: false, error: 'Deprecated: use "read --type command" instead' });
+      break;
+    case 'output':
+    case 'task-status':
+    case 'tasks':
+      output({ success: false, error: `Deprecated: task commands removed. Use "read --unread-only" to get command output.` });
+      break;
+    case 'list':
+      output({ success: false, error: 'Removed for security. Save your session_id after connect.' });
+      break;
     case 'help':
     case '--help': help(); break;
     default: output({ success: false, error: `Unknown command: ${command}` });
