@@ -1,8 +1,11 @@
 {
   "name": "skill_ssh",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "SSH Skill for Claude - Remote server management via SSH with SQLite storage",
   "main": "scripts/ssh-skill.js",
+  "bin": {
+    "ssh-skill": "./scripts/ssh-skill.js"
+  },
   "scripts": {
     "start": "node scripts/ssh-skill-manager.js start",
     "test": "node scripts/ssh-skill.js"
