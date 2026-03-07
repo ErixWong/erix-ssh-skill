@@ -41,5 +41,6 @@ coverage/
 tmp/
 temp/
 
-# Documentation
-docs/
+# Documentation - 只忽略生成的文档，保留设计文档
+docs/tracking/
+docs/*.html
