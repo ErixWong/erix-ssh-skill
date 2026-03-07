@@ -225,6 +225,39 @@ async function executeCommand(sessionId, taskId, command) {
 }
 
 /**
+ * Read file with retry (handles Windows fs.watch race condition)
+ */
+function readFileWithRetry(filePath, maxRetries = 5, delay = 50) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    
+    function tryRead() {
+      attempts++;
+      try {
+        if (!fs.existsSync(filePath)) {
+          if (attempts < maxRetries) {
+            setTimeout(tryRead, delay);
+            return;
+          }
+          reject(new Error(`ENOENT: no such file or directory, open '${filePath}'`));
+          return;
+        }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        resolve(JSON.parse(content));
+      } catch (err) {
+        if (attempts < maxRetries && (err.code === 'ENOENT' || err.message.includes('ENOENT'))) {
+          setTimeout(tryRead, delay);
+        } else {
+          reject(err);
+        }
+      }
+    }
+    
+    tryRead();
+  });
+}
+
+/**
  * Watch for new commands
  */
 function watchCommands() {
@@ -237,12 +270,12 @@ function watchCommands() {
   }
   
   fs.watch(COMMANDS_DIR, (eventType, filename) => {
-    if (eventType === 'rename' && filename && filename.endsWith('.json')) {
+    if (eventType === 'rename' && filename && filename.endsWith('.json') && !filename.endsWith('.error')) {
       const filePath = path.join(COMMANDS_DIR, filename);
       
       setTimeout(async () => {
         try {
-          const cmd = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          const cmd = await readFileWithRetry(filePath);
           await processCommand(cmd);
           fs.unlinkSync(filePath);
         } catch (err) {
