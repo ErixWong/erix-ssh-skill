@@ -23,7 +23,7 @@ Session-based SSH client with async execution and SQLite storage.
 正确做法:
 1. connect 成功后，立即保存返回的 session_id
 2. 后续所有操作都使用这个 session_id
-3. 如果丢失 session_id，只能 disconnect 并重新 connect
+3. 如果丢失 session_id，只能重新 connect
 
 错误做法:
 - 没有保存 session_id 就关闭对话
@@ -34,20 +34,26 @@ Session-based SSH client with async execution and SQLite storage.
 ## Quick Start
 
 ```bash
+# 1. 启动后台管理进程
 node scripts/ssh-skill.js start-manager
+
+# 2. 连接服务器（保存返回的 session_id！）
 node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
-# ⚠️ 保存返回的 session_id！这是访问该连接的唯一凭证
+# → { "success": true, "session_id": "sess_xxx" }
+
+# 3. 执行命令
 node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
-node scripts/ssh-skill.js history --session sess_xxx
-node scripts/ssh-skill.js output --task task_xxx
+
+# 4. 读取消息
+node scripts/ssh-skill.js read --session sess_xxx --unread-only --mark-read
 ```
 
 ## Core Workflow
 
 ```
-history → 返回命令清单 (task_id, command, status)
-           ↓
-output --task TASK_ID → 返回详细结果 (stdout, stderr, exit_code)
+exec --session ID --command "..."  →  异步执行，立即返回
+                ↓
+read --session ID --unread-only    →  稍后读取新消息
 ```
 
 ## Commands
@@ -60,18 +66,13 @@ output --task TASK_ID → 返回详细结果 (stdout, stderr, exit_code)
 | `stop-manager` | Stop background manager |
 | `connect` | Connect to server (返回 session_id，**必须保存**) |
 | `disconnect` | Disconnect from server |
-| `delete` | Delete session and history |
-| ~~`list`~~ | **已移除**（安全原因，Session ID 是访问凭证） |
+| `delete` | Delete session and all history |
 
 ### Command Execution
 
 | Command | Description |
 |---------|-------------|
-| `exec` | Execute command (async, returns task_id) |
-| `history` | Get command list with task_id |
-| `output` | Get task output by task_id |
-| `task-status` | Get task status (summary) |
-| `tasks` | List all tasks |
+| `exec` | Execute command (async, returns immediately) |
 
 ### Message Query
 
@@ -80,72 +81,111 @@ output --task TASK_ID → 返回详细结果 (stdout, stderr, exit_code)
 | `read` | Read messages with filters |
 | `search` | Search messages by content |
 | `stats` | Get session statistics |
-| `mark-read` | Mark messages as read |
 
-## history
+---
 
-Get command history with task_id.
+## connect
+
+Connect to a remote server.
 
 ```bash
-node scripts/ssh-skill.js history --session ID [--limit N]
+node scripts/ssh-skill.js connect --host HOST --username USER [options]
 ```
+
+**Required:**
+- `--host HOST` - Server hostname or IP
+- `--username USER` - SSH username
+
+**Options:**
+- `--port PORT` - SSH port (default: 22)
+- `--password PASS` - Password authentication
+- `--key PATH` - SSH private key path
+- `--passphrase PASS` - Key passphrase
 
 **Output:**
 ```json
 {
   "success": true,
-  "commands": [
-    {
-      "id": "msg_xxx",
-      "task_id": "task_001",
-      "command": "df -h",
-      "timestamp": "2024-01-15T10:30:00Z",
-      "status": "completed",
-      "exit_code": 0,
-      "has_output": true,
-      "has_error": false
-    }
-  ]
+  "session_id": "sess_c7f8a9b2..."
 }
 ```
+⚠️ **必须保存 session_id！这是访问该连接的唯一凭证。**
 
-## output
+---
 
-Get detailed output for a specific task.
+## exec
+
+Execute a command on the remote server (async).
 
 ```bash
-node scripts/ssh-skill.js output --task TASK_ID
+node scripts/ssh-skill.js exec --session ID --command "COMMAND"
 ```
+
+**Required:**
+- `--session ID` - Session ID
+- `--command "COMMAND"` - Command to execute
 
 **Output:**
 ```json
-{
-  "success": true,
-  "task_id": "task_001",
-  "command": "df -h",
-  "status": "completed",
-  "exit_code": 0,
-  "output": "Filesystem...",
-  "stderr": ""
-}
+{ "success": true }
 ```
+
+Command runs asynchronously. Use `read` to get output.
+
+---
 
 ## read
 
-Read messages with filters.
+Read messages from a session.
 
 ```bash
 node scripts/ssh-skill.js read --session ID [options]
 ```
 
+**Required:**
+- `--session ID` - Session ID
+
 **Options:**
-- `--since` - Messages after timestamp
-- `--until` - Messages before timestamp
-- `--type` - Filter by type (command, output, error, complete, system)
-- `--task` - Filter by task_id
-- `--unread-only` - Only unread
-- `--mark-read` - Mark as read
-- `--limit N` - Limit results
+- `--unread-only` - Only return unread messages
+- `--mark-read` - Mark messages as read
+- `--type TYPE` - Filter by type: `command`, `output`, `error`, `complete`, `system`
+- `--since TIME` - Messages after timestamp
+- `--until TIME` - Messages before timestamp
+- `--limit N` - Limit results (default: 100)
+- `--reverse` - Newest first
+
+**Output:**
+```json
+{
+  "success": true,
+  "session_id": "sess_xxx",
+  "status": "connected",
+  "unread_count": 3,
+  "messages": [
+    {
+      "id": "msg_001",
+      "type": "command",
+      "content": "df -h",
+      "timestamp": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "msg_002",
+      "type": "output",
+      "content": "FilesystemSizeUsed...",
+      "timestamp": "2024-01-15T10:30:01Z",
+      "stream": "stdout"
+    },
+    {
+      "id": "msg_003",
+      "type": "complete",
+      "content": "exit code: 0",
+      "timestamp": "2024-01-15T10:30:02Z"
+    }
+  ]
+}
+```
+
+---
 
 ## search
 
@@ -155,28 +195,82 @@ Search messages by content.
 node scripts/ssh-skill.js search --session ID --query "TEXT"
 ```
 
+**Required:**
+- `--session ID` - Session ID
+- `--query "TEXT"` - Search text
+
+**Options:**
+- `--type TYPE` - Filter by type
+- `--limit N` - Limit results (default: 50)
+
+---
+
+## stats
+
+Get session statistics.
+
+```bash
+node scripts/ssh-skill.js stats --session ID
+```
+
+**Output:**
+```json
+{
+  "success": true,
+  "session_id": "sess_xxx",
+  "status": "connected",
+  "total_messages": 150,
+  "unread_count": 3,
+  "connected_at": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+## disconnect
+
+Disconnect from server.
+
+```bash
+node scripts/ssh-skill.js disconnect --session ID
+```
+
+---
+
+## delete
+
+Delete session and all history.
+
+```bash
+node scripts/ssh-skill.js delete --session ID
+```
+
+---
+
 ## Typical LLM Workflow
 
 ```bash
-# 0. 首次使用：建立连接并保存 session_id
+# 1. 连接服务器（保存 session_id！）
 node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
-# 返回: {"success":true,"session_id":"sess_c7f8a9b2..."}
-# ⚠️ 必须保存这个 session_id！丢失后无法恢复，只能重新连接
+# → { "session_id": "sess_abc123" }
 
-# 1. 检查命令历史（需要 session_id）
-node scripts/ssh-skill.js history --session sess_xxx
+# 2. 执行命令
+node scripts/ssh-skill.js exec --session sess_abc123 --command "df -h"
 
-# 2. 获取特定任务的输出
-node scripts/ssh-skill.js output --task task_xxx
+# 3. 读取新消息
+node scripts/ssh-skill.js read --session sess_abc123 --unread-only --mark-read
 
-# 3. 执行新命令
-node scripts/ssh-skill.js exec --session sess_xxx --command "..."
+# 4. 执行更多命令
+node scripts/ssh-skill.js exec --session sess_abc123 --command "ls -la"
 
-# 4. 搜索错误信息
-node scripts/ssh-skill.js search --session sess_xxx --query "error"
+# 5. 搜索历史
+node scripts/ssh-skill.js search --session sess_abc123 --query "error"
+
+# 6. 断开连接
+node scripts/ssh-skill.js disconnect --session sess_abc123
 ```
 
-### LLM 职责清单
+## LLM 职责清单
 
 - [ ] **连接后立即保存 session_id** 到对话上下文或本地存储
 - [ ] **每次操作前确认 session_id 可用**
@@ -185,12 +279,11 @@ node scripts/ssh-skill.js search --session sess_xxx --query "error"
 
 ## Storage
 
-SQLite database: `~/.ssh-skill/ssh-skill.db`
+SQLite database: `data/ssh-skill.db`
 
 Tables:
-- `sessions` - Connection info
-- `tasks` - Command execution details
-- `messages` - All messages with read status
+- `sessions` - Connection info and credentials
+- `messages` - All messages (command, output, error, complete, system)
 
 ## Requirements
 
