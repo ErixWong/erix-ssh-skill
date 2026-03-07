@@ -9,11 +9,34 @@ allowed-tools:
 
 Session-based SSH client with async execution and SQLite storage.
 
+## ⚠️ 重要安全说明
+
+**Session ID 是访问凭证，必须妥善保存！**
+
+- Session ID 采用 **Capability-based Security** 机制：**知道 Session ID = 拥有该 Session 的完全控制权**
+- **LLM 必须将 Session ID 保存在本地**（如对话上下文、本地文件等）
+- **丢失 Session ID = 丢失访问权限**，必须重新发起连接
+- **不要泄露 Session ID**，任何获得它的人都可以控制你的远程服务器
+- **不提供 Session 列表功能**（防止枚举攻击），所以无法找回丢失的 Session ID
+
+```
+正确做法:
+1. connect 成功后，立即保存返回的 session_id
+2. 后续所有操作都使用这个 session_id
+3. 如果丢失 session_id，只能 disconnect 并重新 connect
+
+错误做法:
+- 没有保存 session_id 就关闭对话
+- 把 session_id 分享给不可信的人
+- 在公开场合泄露 session_id
+```
+
 ## Quick Start
 
 ```bash
 node scripts/ssh-skill.js start-manager
 node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
+# ⚠️ 保存返回的 session_id！这是访问该连接的唯一凭证
 node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
 node scripts/ssh-skill.js history --session sess_xxx
 node scripts/ssh-skill.js output --task task_xxx
@@ -35,10 +58,10 @@ output --task TASK_ID → 返回详细结果 (stdout, stderr, exit_code)
 |---------|-------------|
 | `start-manager` | Start background manager |
 | `stop-manager` | Stop background manager |
-| `connect` | Connect to server |
+| `connect` | Connect to server (返回 session_id，**必须保存**) |
 | `disconnect` | Disconnect from server |
 | `delete` | Delete session and history |
-| `list` | List all sessions |
+| ~~`list`~~ | **已移除**（安全原因，Session ID 是访问凭证） |
 
 ### Command Execution
 
@@ -135,21 +158,30 @@ node scripts/ssh-skill.js search --session ID --query "TEXT"
 ## Typical LLM Workflow
 
 ```bash
-# 1. List sessions
-node scripts/ssh-skill.js list
+# 0. 首次使用：建立连接并保存 session_id
+node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
+# 返回: {"success":true,"session_id":"sess_c7f8a9b2..."}
+# ⚠️ 必须保存这个 session_id！丢失后无法恢复，只能重新连接
 
-# 2. Check command history
+# 1. 检查命令历史（需要 session_id）
 node scripts/ssh-skill.js history --session sess_xxx
 
-# 3. Get output for specific task
+# 2. 获取特定任务的输出
 node scripts/ssh-skill.js output --task task_xxx
 
-# 4. Execute new command
+# 3. 执行新命令
 node scripts/ssh-skill.js exec --session sess_xxx --command "..."
 
-# 5. Search for errors
+# 4. 搜索错误信息
 node scripts/ssh-skill.js search --session sess_xxx --query "error"
 ```
+
+### LLM 职责清单
+
+- [ ] **连接后立即保存 session_id** 到对话上下文或本地存储
+- [ ] **每次操作前确认 session_id 可用**
+- [ ] **如果 session_id 丢失**，告知用户需要重新连接
+- [ ] **不要在公开场合显示完整 session_id**（可显示前8位用于识别）
 
 ## Storage
 
