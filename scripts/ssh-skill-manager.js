@@ -291,6 +291,9 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
     let passwordAttempts = 0;
     const maxPasswordAttempts = 3;
     
+    // Escape regex special characters for safe password matching
+    const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
     // Sudo password prompt patterns
     const passwordPromptPatterns = [
       /\[sudo\].*password/i,
@@ -302,8 +305,8 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
       const chunk = data.toString();
       stdout += chunk;
       
-      // Check for password prompt
-      if (!passwordSent || passwordAttempts < maxPasswordAttempts) {
+      // Check for password prompt (fixed: && instead of ||)
+      if (!passwordSent && passwordAttempts < maxPasswordAttempts) {
         const isPasswordPrompt = passwordPromptPatterns.some(pattern => pattern.test(chunk));
         
         if (isPasswordPrompt) {
@@ -318,8 +321,8 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
             content: '[sudo] Password prompt detected, sending password...'
           });
           
-          // Clear password from the output to avoid logging it
-          stdout = stdout.replace(new RegExp(`^${password}$`, 'gm'), '********');
+          // Clear password from the output to avoid logging it (fixed: escape special chars)
+          stdout = stdout.replace(new RegExp(`^${escapeRegExp(password)}$`, 'gm'), '********');
         }
       }
       
@@ -327,11 +330,14 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
       task.output = stdout;
       db.updateTask(task);
       
+      // Sanitize output before storing (mask password if present)
+      const sanitizedChunk = chunk.replace(new RegExp(escapeRegExp(password), 'g'), '********');
+      
       // Add output message
       db.addMessage(sessionId, {
         type: 'output',
         task_id: taskId,
-        content: chunk,
+        content: sanitizedChunk,
         stream: 'stdout'
       });
     });
@@ -363,6 +369,9 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
         task_id: taskId,
         content: signal || undefined
       });
+      
+      // Clear password from memory for security
+      password = null;
     });
   });
 }

@@ -135,18 +135,44 @@ node scripts/ssh-skill.js output --task TASK_ID
 
 Execute a command with sudo privileges. Uses PTY (pseudo-terminal) to handle password prompts automatically.
 
+### 密码传递方式（按优先级）
+
+1. **密码文件** `--password-file FILE` - 最安全，适合脚本
+2. **环境变量** `SUDO_PASSWORD` - 适合 CI/CD 环境
+3. **交互式输入** - 终端中隐藏输入，适合手动使用
+
+**⚠️ 安全警告**: `--password` 命令行参数已废弃，因为会在进程列表和 shell 历史中暴露密码。
+
+### 使用方式
+
 ```bash
-node scripts/ssh-skill.js sudo --session ID --command "COMMAND" --password "PASSWORD"
+# 方式 1: 密码文件（推荐用于脚本）
+echo "my_password" > ~/.sudo_pw && chmod 600 ~/.sudo_pw
+node scripts/ssh-skill.js sudo --session ID --command "COMMAND" --password-file ~/.sudo_pw
+
+# 方式 2: 环境变量（适合 CI/CD）
+SUDO_PASSWORD="my_password" node scripts/ssh-skill.js sudo --session ID --command "COMMAND"
+
+# 方式 3: 交互式输入（适合手动使用）
+node scripts/ssh-skill.js sudo --session ID --command "COMMAND"
+# 会提示: [sudo] Password: （输入隐藏）
 ```
 
 **Options:**
 - `--session` - Session ID (required)
 - `--command` - Command to execute with sudo (required)
-- `--password` - User password for sudo authentication (required)
+- `--password-file` - Read password from file (recommended)
 
 **Example:**
 ```bash
-node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password "mypassword"
+# 使用密码文件
+node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw
+
+# 使用环境变量
+SUDO_PASSWORD="secret" node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
+
+# 交互式
+node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
 ```
 
 **Output:**
@@ -162,7 +188,19 @@ node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --passw
 - Uses `sudo -S` to read password from stdin
 - PTY is automatically allocated for proper terminal handling
 - Password is not stored in the database
+- Password is cleared from memory after command completion
+- Output messages are sanitized to mask password
+- Command files use restrictive permissions (0600)
 - Check output with `output --task TASK_ID` after execution
+- **Never use `--password` CLI argument** - it's deprecated for security reasons
+
+### 安全特性
+
+1. **密码文件权限检查** - 如果密码文件权限过于开放（其他用户可读），会显示警告
+2. **命令文件保护** - IPC 命令文件权限设置为 `0600`
+3. **内存安全** - 命令执行完成后清除密码引用
+4. **输出屏蔽** - 数据库消息中的密码被替换为 `********`
+5. **终端恢复** - 交互式输入异常时自动恢复终端状态
 
 ## read
 
@@ -206,8 +244,10 @@ node scripts/ssh-skill.js output --task task_xxx
 # 3. 执行新命令
 node scripts/ssh-skill.js exec --session sess_xxx --command "..."
 
-# 4. 执行需要 sudo 权限的命令
-node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password "xxx"
+# 4. 执行需要 sudo 权限的命令（安全方式）
+SUDO_PASSWORD="xxx" node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
+# 或者交互式输入
+node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
 
 # 5. 搜索错误信息
 node scripts/ssh-skill.js search --session sess_xxx --query "error"
