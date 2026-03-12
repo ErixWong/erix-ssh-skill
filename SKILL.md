@@ -68,6 +68,7 @@ output --task TASK_ID → 返回详细结果 (stdout, stderr, exit_code)
 | Command | Description |
 |---------|-------------|
 | `exec` | Execute command (async, returns task_id) |
+| `sudo` | Execute sudo command with password (PTY enabled) |
 | `history` | Get command list with task_id |
 | `output` | Get task output by task_id |
 | `task-status` | Get task status (summary) |
@@ -130,6 +131,39 @@ node scripts/ssh-skill.js output --task TASK_ID
 }
 ```
 
+## sudo
+
+Execute a command with sudo privileges. Uses PTY (pseudo-terminal) to handle password prompts automatically.
+
+```bash
+node scripts/ssh-skill.js sudo --session ID --command "COMMAND" --password "PASSWORD"
+```
+
+**Options:**
+- `--session` - Session ID (required)
+- `--command` - Command to execute with sudo (required)
+- `--password` - User password for sudo authentication (required)
+
+**Example:**
+```bash
+node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password "mypassword"
+```
+
+**Output:**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "Sudo command submitted"
+}
+```
+
+**Notes:**
+- Uses `sudo -S` to read password from stdin
+- PTY is automatically allocated for proper terminal handling
+- Password is not stored in the database
+- Check output with `output --task TASK_ID` after execution
+
 ## read
 
 Read messages with filters.
@@ -172,7 +206,10 @@ node scripts/ssh-skill.js output --task task_xxx
 # 3. 执行新命令
 node scripts/ssh-skill.js exec --session sess_xxx --command "..."
 
-# 4. 搜索错误信息
+# 4. 执行需要 sudo 权限的命令
+node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password "xxx"
+
+# 5. 搜索错误信息
 node scripts/ssh-skill.js search --session sess_xxx --query "error"
 ```
 

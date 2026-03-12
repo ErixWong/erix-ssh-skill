@@ -216,6 +216,33 @@ function exec(params) {
 }
 
 /**
+ * Execute a sudo command with password
+ */
+function sudo(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.command) return output({ success: false, error: 'command is required' });
+  if (!params.password) return output({ success: false, error: 'password is required for sudo' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sudo ${params.command}`);
+  
+  sendCommand({
+    action: 'sudo',
+    session_id: sessionId,
+    task_id: taskId,
+    command: params.command,
+    password: params.password
+  });
+  
+  output({ success: true, task_id: taskId, message: 'Sudo command submitted' });
+}
+
+/**
  * Read session messages
  */
 function read(params) {
@@ -470,6 +497,7 @@ function help() {
   console.log('  stop-manager       Stop the background manager');
   console.log('  connect            Connect to a server');
   console.log('  exec               Execute a command');
+  console.log('  sudo               Execute a sudo command with password');
   console.log('  read               Read messages');
   console.log('  history            Get command history (list with task_id)');
   console.log('  output             Get task output (detailed)');
@@ -489,6 +517,7 @@ function help() {
   console.log('  node ssh-skill.js start-manager');
   console.log('  node ssh-skill.js connect --host 192.168.1.100 --username admin');
   console.log('  node ssh-skill.js exec --session sess_xxx --command "df -h"');
+  console.log('  node ssh-skill.js sudo --session sess_xxx --command "apt update" --password "xxx"');
   console.log('  node ssh-skill.js history --session sess_xxx');
   console.log('  node ssh-skill.js output --task task_xxx');
 }
@@ -512,6 +541,7 @@ async function main() {
     case 'stop-manager': stopManager(); break;
     case 'connect': connect(params); break;
     case 'exec': exec(params); break;
+    case 'sudo': sudo(params); break;
     case 'read': read(params); break;
     case 'history': history(params); break;
     case 'output': taskOutput(params); break;

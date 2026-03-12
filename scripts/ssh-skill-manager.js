@@ -133,7 +133,7 @@ async function setupConnection(sessionId, config) {
 /**
  * Execute command on session
  */
-async function executeCommand(sessionId, taskId, command) {
+async function executeCommand(sessionId, taskId, command, options = {}) {
   const conn = connections.get(sessionId);
   const task = db.getTask(taskId);
   
@@ -159,7 +159,17 @@ async function executeCommand(sessionId, taskId, command) {
     content: command
   });
   
-  conn.exec(command, (err, stream) => {
+  // Build exec options (PTY for sudo commands)
+  const execOptions = {};
+  if (options.pty || options.sudo) {
+    execOptions.pty = {
+      cols: 120,
+      rows: 24,
+      term: 'xterm-256color'
+    };
+  }
+  
+  conn.exec(command, execOptions, (err, stream) => {
     if (err) {
       task.status = 'error';
       task.output = err.message;
@@ -179,6 +189,139 @@ async function executeCommand(sessionId, taskId, command) {
     stream.on('data', (data) => {
       const chunk = data.toString();
       stdout += chunk;
+      
+      // Update task with partial output
+      task.output = stdout;
+      db.updateTask(task);
+      
+      // Add output message
+      db.addMessage(sessionId, {
+        type: 'output',
+        task_id: taskId,
+        content: chunk,
+        stream: 'stdout'
+      });
+    });
+    
+    stream.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      task.stderr = stderr;
+      db.updateTask(task);
+      
+      db.addMessage(sessionId, {
+        type: 'output',
+        task_id: taskId,
+        content: chunk,
+        stream: 'stderr'
+      });
+    });
+    
+    stream.on('close', (code, signal) => {
+      task.status = 'completed';
+      task.output = stdout;
+      task.stderr = stderr;
+      task.exit_code = code;
+      task.completed_at = new Date().toISOString();
+      db.updateTask(task);
+      
+      db.addMessage(sessionId, {
+        type: 'complete',
+        task_id: taskId,
+        content: signal || undefined
+      });
+    });
+  });
+}
+
+/**
+ * Execute sudo command with password
+ */
+async function executeSudoCommand(sessionId, taskId, command, password) {
+  const conn = connections.get(sessionId);
+  const task = db.getTask(taskId);
+  
+  if (!conn) {
+    task.status = 'error';
+    task.output = 'Not connected';
+    db.updateTask(task);
+    
+    db.addMessage(sessionId, {
+      type: 'error',
+      task_id: taskId,
+      content: 'Not connected'
+    });
+    return;
+  }
+  
+  task.status = 'running';
+  db.updateTask(task);
+  
+  db.addMessage(sessionId, {
+    type: 'command',
+    task_id: taskId,
+    content: `sudo ${command}`
+  });
+  
+  const ptyConfig = {
+    cols: 120,
+    rows: 24,
+    term: 'xterm-256color'
+  };
+  
+  const sudoCommand = `sudo -S ${command}`;
+  
+  conn.exec(sudoCommand, { pty: ptyConfig }, (err, stream) => {
+    if (err) {
+      task.status = 'error';
+      task.output = err.message;
+      db.updateTask(task);
+      
+      db.addMessage(sessionId, {
+        type: 'error',
+        task_id: taskId,
+        content: err.message
+      });
+      return;
+    }
+    
+    let stdout = '';
+    let stderr = '';
+    let passwordSent = false;
+    let passwordAttempts = 0;
+    const maxPasswordAttempts = 3;
+    
+    // Sudo password prompt patterns
+    const passwordPromptPatterns = [
+      /\[sudo\].*password/i,
+      /password\s*(for|:)/i,
+      /^Password:/im
+    ];
+    
+    stream.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+      
+      // Check for password prompt
+      if (!passwordSent || passwordAttempts < maxPasswordAttempts) {
+        const isPasswordPrompt = passwordPromptPatterns.some(pattern => pattern.test(chunk));
+        
+        if (isPasswordPrompt) {
+          stream.write(password + '\n');
+          passwordSent = true;
+          passwordAttempts++;
+          
+          // Add a message about password prompt detected
+          db.addMessage(sessionId, {
+            type: 'system',
+            task_id: taskId,
+            content: '[sudo] Password prompt detected, sending password...'
+          });
+          
+          // Clear password from the output to avoid logging it
+          stdout = stdout.replace(new RegExp(`^${password}$`, 'gm'), '********');
+        }
+      }
       
       // Update task with partial output
       task.output = stdout;
@@ -321,6 +464,11 @@ async function processCommand(cmd) {
     
     case 'exec': {
       await executeCommand(cmd.session_id, cmd.task_id, cmd.command);
+      break;
+    }
+    
+    case 'sudo': {
+      await executeSudoCommand(cmd.session_id, cmd.task_id, cmd.command, cmd.password);
       break;
     }
     
