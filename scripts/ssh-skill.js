@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
  * SSH Skill CLI - Client for the session manager
- * 
+ *
  * Communicates with the background SSH Skill Manager.
  * Uses SQLite for persistent storage.
  */
 
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 const db = require('./db');
 
 // Data directory paths
@@ -51,6 +52,7 @@ function parseArgs(args) {
 
 /**
  * Send command to manager
+ * Sets file permissions to 0600 for security
  */
 function sendCommand(cmd) {
   const dir = path.dirname(COMMANDS_DIR);
@@ -64,7 +66,8 @@ function sendCommand(cmd) {
   const cmdId = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const cmdFile = path.join(COMMANDS_DIR, `${cmdId}.json`);
   
-  fs.writeFileSync(cmdFile, JSON.stringify(cmd));
+  // Write with restrictive permissions (0600 = owner read/write only)
+  fs.writeFileSync(cmdFile, JSON.stringify(cmd), { mode: 0o600 });
   
   return cmdId;
 }
@@ -213,6 +216,173 @@ function exec(params) {
   });
   
   output({ success: true, task_id: taskId, message: 'Command submitted' });
+}
+
+/**
+ * Read password from file
+ * Checks file permissions for security
+ */
+function readPasswordFile(filePath) {
+  try {
+    const absolutePath = filePath.replace('~', require('os').homedir());
+    if (!fs.existsSync(absolutePath)) {
+      return null;
+    }
+    
+    // Check file permissions (warn if too open)
+    const stat = fs.statSync(absolutePath);
+    const mode = stat.mode & 0o777;
+    if (mode & 0o077) { // Others or group can read
+      console.error(`WARNING: Password file ${absolutePath} has overly permissive permissions (${mode.toString(8)})`);
+      console.error('Recommended: chmod 600', absolutePath);
+    }
+    
+    const content = fs.readFileSync(absolutePath, 'utf-8').trim();
+    return content || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Prompt for password interactively (hidden input)
+ * Uses try-finally to ensure terminal state is restored
+ */
+async function promptPassword(promptText) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+    
+    let rawModeEnabled = false;
+    
+    const cleanup = () => {
+      if (rawModeEnabled) {
+        try {
+          process.stdin.setRawMode(false);
+        } catch (e) { /* ignore */ }
+      }
+      process.stdin.pause();
+      rl.close();
+    };
+    
+    try {
+      // Hide input
+      process.stdout.write(promptText);
+      process.stdin.setRawMode(true);
+      rawModeEnabled = true;
+      process.stdin.resume();
+      
+      let password = '';
+      
+      const onData = (char) => {
+        const c = char.toString('utf-8');
+        switch (c) {
+          case '\n':
+          case '\r':
+          case '\u0004': // Ctrl-D
+            cleanup();
+            process.stdout.write('\n');
+            resolve(password);
+            break;
+          case '\u0003': // Ctrl-C
+            cleanup();
+            process.stdout.write('\n');
+            process.exit(130); // 128 + SIGINT
+            break;
+          case '\u007F': // Backspace
+            if (password.length > 0) {
+              password = password.slice(0, -1);
+            }
+            break;
+          default:
+            password += c;
+            break;
+        }
+      };
+      
+      process.stdin.on('data', onData);
+      
+    } catch (err) {
+      cleanup();
+      resolve('');
+    }
+  });
+}
+
+/**
+ * Get password from various sources (priority: file > env > interactive)
+ */
+async function getPassword(params) {
+  // 1. From password file (highest priority for scripting)
+  if (params.password_file) {
+    const pw = readPasswordFile(params.password_file);
+    if (pw) return { password: pw, source: 'file' };
+    return { error: `Password file not found or empty: ${params.password_file}` };
+  }
+  
+  // 2. From environment variable
+  if (process.env.SUDO_PASSWORD) {
+    return { password: process.env.SUDO_PASSWORD, source: 'env' };
+  }
+  
+  // 3. Interactive prompt (if tty)
+  if (process.stdin.isTTY) {
+    const password = await promptPassword('[sudo] Password: ');
+    if (!password) {
+      return { error: 'Password is required for sudo' };
+    }
+    return { password, source: 'interactive' };
+  }
+  
+  // 4. No password available
+  return { error: 'Password required. Use one of: --password-file, SUDO_PASSWORD env, or interactive mode' };
+}
+
+/**
+ * Execute a sudo command with password
+ *
+ * Password sources (in order of priority):
+ * 1. --password-file FILE   Read from file (most secure for scripting)
+ * 2. SUDO_PASSWORD env      Environment variable
+ * 3. Interactive prompt     Hidden input from terminal
+ *
+ * NOTE: --password CLI arg is DEPRECATED and ignored for security reasons
+ */
+async function sudo(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.command) return output({ success: false, error: 'command is required' });
+  
+  // Warn if using deprecated --password parameter
+  if (params.password) {
+    console.error('WARNING: --password CLI argument is deprecated and ignored for security reasons.');
+    console.error('Use one of: --password-file, SUDO_PASSWORD env, or interactive mode.');
+  }
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  // Get password from secure sources
+  const pwResult = await getPassword(params);
+  if (pwResult.error) {
+    return output({ success: false, error: pwResult.error });
+  }
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sudo ${params.command}`);
+  
+  sendCommand({
+    action: 'sudo',
+    session_id: sessionId,
+    task_id: taskId,
+    command: params.command,
+    password: pwResult.password
+  });
+  
+  output({ success: true, task_id: taskId, message: 'Sudo command submitted' });
 }
 
 /**
@@ -470,6 +640,7 @@ function help() {
   console.log('  stop-manager       Stop the background manager');
   console.log('  connect            Connect to a server');
   console.log('  exec               Execute a command');
+  console.log('  sudo               Execute a sudo command with password');
   console.log('  read               Read messages');
   console.log('  history            Get command history (list with task_id)');
   console.log('  output             Get task output (detailed)');
@@ -485,10 +656,18 @@ function help() {
   console.log('');
   console.log('Storage: ./data/ssh-skill.db (SQLite)');
   console.log('');
+  console.log('Sudo Password Options (secure):');
+  console.log('  --password-file FILE   Read password from file');
+  console.log('  SUDO_PASSWORD env      Set environment variable');
+  console.log('  (interactive)          Will prompt if no password provided');
+  console.log('');
   console.log('Examples:');
   console.log('  node ssh-skill.js start-manager');
   console.log('  node ssh-skill.js connect --host 192.168.1.100 --username admin');
   console.log('  node ssh-skill.js exec --session sess_xxx --command "df -h"');
+  console.log('  node ssh-skill.js sudo --session sess_xxx --command "apt update"');
+  console.log('  SUDO_PASSWORD="secret" node ssh-skill.js sudo --session sess_xxx --command "apt update"');
+  console.log('  node ssh-skill.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');
   console.log('  node ssh-skill.js history --session sess_xxx');
   console.log('  node ssh-skill.js output --task task_xxx');
 }
@@ -512,6 +691,7 @@ async function main() {
     case 'stop-manager': stopManager(); break;
     case 'connect': connect(params); break;
     case 'exec': exec(params); break;
+    case 'sudo': await sudo(params); break;  // async
     case 'read': read(params); break;
     case 'history': history(params); break;
     case 'output': taskOutput(params); break;
