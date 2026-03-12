@@ -42,7 +42,7 @@ const validIds = messageIds.filter(id => typeof id === 'string' && id.length > 0
 
 ### 3. 错误处理改进
 
-**文件**: [`scripts/ssh-skill-manager.js:237-267`](scripts/ssh-skill-manager.js:237)
+**文件**: [`scripts/session_manager.js:237-267`](../../scripts/session_manager.js:237)
 
 **修复**: 写入错误响应文件
 
@@ -60,7 +60,7 @@ catch (err) {
 
 ### 4. 输入验证
 
-**文件**: [`scripts/ssh-skill.js:117-147`](scripts/ssh-skill.js:117)
+**文件**: [`scripts/ssh_client.js:117-147`](../../scripts/ssh_client.js:117)
 
 **修复**: 添加 host 和 port 验证
 

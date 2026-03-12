@@ -4,14 +4,14 @@
 
 ### Current Architecture
 
-- [`scripts/ssh-skill.js`](../../scripts/ssh-skill.js) - CLI client, sends commands via JSON files
-- [`scripts/ssh-skill-manager.js`](../../scripts/ssh-skill-manager.js) - Background process managing SSH connections
+- [`scripts/ssh_client.js`](../../scripts/ssh_client.js) - CLI client, sends commands via JSON files
+- [`scripts/session_manager.js`](../../scripts/session_manager.js) - Background process managing SSH connections
 - [`scripts/db.js`](../../scripts/db.js) - SQLite storage
 
 ### Current Command Execution
 
 ```javascript
-// ssh-skill-manager.js:162
+// session_manager.js:162
 conn.exec(command, (err, stream) => {
   // stdout/stderr captured and stored
 });
@@ -84,7 +84,7 @@ Server-side feature, not applicable for client-side sudo.
 ### New Command: `sudo`
 
 ```bash
-node scripts/ssh-skill.js sudo --session ID --command "..." --password "..."
+node scripts/ssh_client.js sudo --session ID --command "..." --password "..."
 ```
 
 ### Database Schema Extension
@@ -97,7 +97,7 @@ ALTER TABLE sessions ADD COLUMN sudo_password TEXT;
 
 ### Code Changes
 
-#### 1. ssh-skill-manager.js - Add sudo execution
+#### 1. session_manager.js - Add sudo execution
 
 ```javascript
 async function executeSudoCommand(sessionId, taskId, command, password) {
@@ -141,7 +141,7 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
 }
 ```
 
-#### 2. ssh-skill.js - Add sudo CLI command
+#### 2. ssh_client.js - Add sudo CLI command
 
 ```javascript
 function sudo(params) {
@@ -206,7 +206,7 @@ const SUDO_PROMPT_PATTERNS = [
 For more flexibility, add an interactive mode:
 
 ```bash
-node scripts/ssh-skill.js shell --session ID
+node scripts/ssh_client.js shell --session ID
 ```
 
 Opens a bidirectional shell where user can interact directly.
@@ -232,7 +232,7 @@ Opens a bidirectional shell where user can interact directly.
 ### New CLI Command
 
 ```bash
-node scripts/ssh-skill.js sudo \
+node scripts/ssh_client.js sudo \
   --session sess_xxx \
   --command "apt update" \
   --password "user_password"
@@ -250,8 +250,8 @@ node scripts/ssh-skill.js sudo \
 
 ## Tasks
 
-- [ ] Add `sudo` action handler in ssh-skill-manager.js
-- [ ] Add `sudo` CLI command in ssh-skill.js
+- [ ] Add `sudo` action handler in session_manager.js
+- [ ] Add `sudo` CLI command in ssh_client.js
 - [ ] Implement PTY allocation for exec
 - [ ] Implement password prompt detection
 - [ ] Add tests for sudo functionality

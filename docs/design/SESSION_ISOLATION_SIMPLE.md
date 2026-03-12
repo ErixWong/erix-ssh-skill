@@ -376,8 +376,8 @@ lib/
 | 文件 | 修改内容 |
 |------|----------|
 | `scripts/db.js` | 使用 `generateSecureSessionId()`，移除 `listSessions()` |
-| `scripts/ssh-skill.js` | 移除 `list` 命令，保存返回的 session_id |
-| `scripts/ssh-skill-manager.js` | 添加 session_id 格式验证 |
+| `scripts/ssh_client.js` | 移除 `list` 命令，保存返回的 session_id |
+| `scripts/session_manager.js` | 添加 session_id 格式验证 |
 
 ### 5.3 数据库迁移
 

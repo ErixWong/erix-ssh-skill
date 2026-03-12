@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * SSH Skill CLI - Client for the session manager
+ * SSH Client - Client for the session manager
  *
- * Communicates with the background SSH Skill Manager.
+ * Communicates with the background Session Manager.
  * Uses SQLite for persistent storage.
  */
 
@@ -14,7 +14,7 @@ const db = require('./db');
 // Data directory paths
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const COMMANDS_DIR = path.join(DATA_DIR, 'commands');
-const MANAGER_SCRIPT = path.join(__dirname, 'ssh-skill-manager.js');
+const MANAGER_SCRIPT = path.join(__dirname, 'session_manager.js');
 
 /**
  * Output JSON
@@ -631,13 +631,13 @@ function list() {
  * Show help
  */
 function help() {
-  console.log('SSH Skill - Session-based SSH client (SQLite storage)');
+  console.log('SSH Client - Session-based SSH client (SQLite storage)');
   console.log('');
-  console.log('Usage: node ssh-skill.js <command> [options]');
+  console.log('Usage: node ssh_client.js <command> [options]');
   console.log('');
   console.log('Commands:');
-  console.log('  start-manager      Start the background manager');
-  console.log('  stop-manager       Stop the background manager');
+  console.log('  start-manager      Start the background session manager');
+  console.log('  stop-manager       Stop the background session manager');
   console.log('  connect            Connect to a server');
   console.log('  exec               Execute a command');
   console.log('  sudo               Execute a sudo command with password');
@@ -654,7 +654,7 @@ function help() {
   console.log('  delete             Delete a session');
   console.log('  list               List all sessions');
   console.log('');
-  console.log('Storage: ./data/ssh-skill.db (SQLite)');
+  console.log('Storage: ./data/ssh.db (SQLite)');
   console.log('');
   console.log('Sudo Password Options (secure):');
   console.log('  --password-file FILE   Read password from file');
@@ -662,14 +662,14 @@ function help() {
   console.log('  (interactive)          Will prompt if no password provided');
   console.log('');
   console.log('Examples:');
-  console.log('  node ssh-skill.js start-manager');
-  console.log('  node ssh-skill.js connect --host 192.168.1.100 --username admin');
-  console.log('  node ssh-skill.js exec --session sess_xxx --command "df -h"');
-  console.log('  node ssh-skill.js sudo --session sess_xxx --command "apt update"');
-  console.log('  SUDO_PASSWORD="secret" node ssh-skill.js sudo --session sess_xxx --command "apt update"');
-  console.log('  node ssh-skill.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');
-  console.log('  node ssh-skill.js history --session sess_xxx');
-  console.log('  node ssh-skill.js output --task task_xxx');
+  console.log('  node ssh_client.js start-manager');
+  console.log('  node ssh_client.js connect --host 192.168.1.100 --username admin');
+  console.log('  node ssh_client.js exec --session sess_xxx --command "df -h"');
+  console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update"');
+  console.log('  SUDO_PASSWORD="secret" node ssh_client.js sudo --session sess_xxx --command "apt update"');
+  console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');
+  console.log('  node ssh_client.js history --session sess_xxx');
+  console.log('  node ssh_client.js output --task task_xxx');
 }
 
 /**

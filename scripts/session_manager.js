@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * SSH Skill Manager - Background process
- * 
+ * Session Manager - Background process
+ *
  * Manages SSH sessions and executes commands.
  * Uses SQLite for persistent storage.
  */
@@ -536,7 +536,7 @@ async function start() {
     return;
   }
   
-  console.log('Starting SSH Skill Manager...');
+  console.log('Starting Session Manager...');
   
   writePid();
   
@@ -544,7 +544,7 @@ async function start() {
   
   watchCommands();
   
-  console.log(`SSH Skill Manager started (PID: ${process.pid})`);
+  console.log(`Session Manager started (PID: ${process.pid})`);
   console.log('Watching for commands...');
   
   process.stdin.resume();
@@ -599,7 +599,7 @@ async function main() {
       stop();
       break;
     default:
-      console.log('Usage: node ssh-skill-manager.js [start|status|stop]');
+      console.log('Usage: node session_manager.js [start|status|stop]');
   }
 }
 

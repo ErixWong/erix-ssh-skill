@@ -1,4 +1,4 @@
-# SSH Skill
+# SSH Client
 
 [English](#english) | [中文](#中文)
 
@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-> Claude Skill for SSH remote server management with session persistence, async execution, and SQLite storage.
+> Claude SSH Client for remote server management with session persistence, async execution, and SQLite storage.
 
 ### Features
 
@@ -28,24 +28,24 @@ npm install
 ### Quick Start
 
 ```bash
-# Start the background manager
-node scripts/ssh-skill.js start-manager
+# Start the background session manager
+node scripts/ssh_client.js start-manager
 
 # Connect to a server
-node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
+node scripts/ssh_client.js connect --host 192.168.1.100 --username admin
 
 # Execute a command
-node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
+node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
 
 # Get command output
-node scripts/ssh-skill.js output --task task_xxx
+node scripts/ssh_client.js output --task task_xxx
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `start-manager` | Start background manager |
+| `start-manager` | Start background session manager |
 | `connect` | Connect to server |
 | `disconnect` | Disconnect from server |
 | `reconnect` | Reconnect a disconnected session |
@@ -63,7 +63,7 @@ node scripts/ssh-skill.js output --task task_xxx
 <a name="中文"></a>
 ## 中文
 
-> Claude SSH 技能，用于远程服务器管理，支持会话持久化、异步执行和 SQLite 存储。
+> Claude SSH 客户端，用于远程服务器管理，支持会话持久化、异步执行和 SQLite 存储。
 
 ### 特性
 
@@ -84,24 +84,24 @@ npm install
 ### 快速开始
 
 ```bash
-# 启动后台管理器
-node scripts/ssh-skill.js start-manager
+# 启动后台会话管理器
+node scripts/ssh_client.js start-manager
 
 # 连接服务器
-node scripts/ssh-skill.js connect --host 192.168.1.100 --username admin
+node scripts/ssh_client.js connect --host 192.168.1.100 --username admin
 
 # 执行命令
-node scripts/ssh-skill.js exec --session sess_xxx --command "df -h"
+node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
 
 # 获取命令输出
-node scripts/ssh-skill.js output --task task_xxx
+node scripts/ssh_client.js output --task task_xxx
 ```
 
 ### 命令列表
 
 | 命令 | 说明 |
 |------|------|
-| `start-manager` | 启动后台管理器 |
+| `start-manager` | 启动后台会话管理器 |
 | `connect` | 连接服务器 |
 | `disconnect` | 断开连接 |
 | `reconnect` | 重连已断开的会话 |
