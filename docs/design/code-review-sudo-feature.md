@@ -85,8 +85,8 @@ db.addMessage(sessionId, { content: sanitizedChunk });
 |------|---------|---------|
 | [`SKILL.md`](../SKILL.md) | 修改 | +39 |
 | [`docs/design/interactive-sudo-design.md`](../design/interactive-sudo-design.md) | 新增 | +258 |
-| [`scripts/ssh-skill-manager.js`](../../scripts/ssh-skill-manager.js) | 修改 | +152 |
-| [`scripts/ssh-skill.js`](../../scripts/ssh-skill.js) | 修改 | +30 |
+| [`scripts/session_manager.js`](../../scripts/session_manager.js) | 修改 | +152 |
+| [`scripts/ssh_client.js`](../../scripts/ssh_client.js) | 修改 | +30 |
 
 ---
 
@@ -96,7 +96,7 @@ db.addMessage(sessionId, { content: sanitizedChunk });
 
 #### 1. ✅ 已修复 - 密码通过命令行参数传递
 
-**位置**: [`scripts/ssh-skill.js:319-351`](../../scripts/ssh-skill.js:319)
+**位置**: [`scripts/ssh_client.js:319-351`](../../scripts/ssh_client.js:319)
 
 **修复方案**: 添加了三种安全的密码传递方式：
 1. `--password-file FILE` - 从文件读取密码
@@ -131,7 +131,7 @@ async function getPassword(params) {
 
 #### 2. ⚠️ 部分修复 - 密码明文写入文件系统
 
-**位置**: [`scripts/ssh-skill.js:56-71`](../../scripts/ssh-skill.js:56)
+**位置**: [`scripts/ssh_client.js:56-71`](../../scripts/ssh_client.js:56)
 
 **现状**: 密码仍通过 JSON 文件传递给 manager 进程（进程间通信需要）
 
@@ -147,7 +147,7 @@ async function getPassword(params) {
 
 #### 3. ✅ 已修复 - 正则表达式未转义特殊字符
 
-**位置**: [`scripts/ssh-skill-manager.js:293-294`](../../scripts/ssh-skill-manager.js:293)
+**位置**: [`scripts/session_manager.js:293-294`](../../scripts/session_manager.js:293)
 
 **修复**:
 ```javascript
@@ -161,7 +161,7 @@ stdout = stdout.replace(new RegExp(`^${escapeRegExp(password)}$`, 'gm'), '******
 
 #### 4. ✅ 已修复 - 密码尝试逻辑错误
 
-**位置**: [`scripts/ssh-skill-manager.js:305`](../../scripts/ssh-skill-manager.js:305)
+**位置**: [`scripts/session_manager.js:305`](../../scripts/session_manager.js:305)
 
 **修复**: 将 `||` 改为 `&&`
 ```javascript
@@ -174,7 +174,7 @@ if (!passwordSent && passwordAttempts < maxPasswordAttempts) {
 
 #### 5. 密码可能泄露到日志/消息
 
-**位置**: [`scripts/ssh-skill-manager.js:331-336`](../../scripts/ssh-skill-manager.js:331)
+**位置**: [`scripts/session_manager.js:331-336`](../../scripts/session_manager.js:331)
 
 ```javascript
 db.addMessage(sessionId, {
@@ -208,7 +208,7 @@ db.addMessage(sessionId, {
 
 #### 6. PTY 配置硬编码
 
-**位置**: [`scripts/ssh-skill-manager.js:266-270`](../../scripts/ssh-skill-manager.js:266)
+**位置**: [`scripts/session_manager.js:266-270`](../../scripts/session_manager.js:266)
 
 ```javascript
 const ptyConfig = {
@@ -226,7 +226,7 @@ const ptyConfig = {
 
 #### 7. 缺少密码清除机制
 
-**位置**: [`scripts/ssh-skill-manager.js:353-365`](../../scripts/ssh-skill-manager.js:353)
+**位置**: [`scripts/session_manager.js:353-365`](../../scripts/session_manager.js:353)
 
 **问题**: 命令执行完成后，`password` 变量仍在内存中，可能被内存转储泄露
 
@@ -309,14 +309,14 @@ stream.on('close', (code, signal) => {
 
 ```bash
 # 方式 1: 环境变量（CI/CD）
-SUDO_PASSWORD="xxx" node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
+SUDO_PASSWORD="xxx" node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
 
 # 方式 2: 密码文件（脚本）
 echo "password" > ~/.sudo_pw && chmod 600 ~/.sudo_pw
-node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw
+node scripts/ssh_client.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw
 
 # 方式 3: 交互式（手动）
-node scripts/ssh-skill.js sudo --session sess_xxx --command "apt update"
+node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
 ```
 
 ✌Bazinga！

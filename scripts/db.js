@@ -10,7 +10,7 @@ const fs = require('fs');
 
 // Use project directory for data storage
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'ssh-skill.db');
+const DB_PATH = path.join(DATA_DIR, 'ssh.db');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {

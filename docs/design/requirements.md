@@ -39,7 +39,7 @@
 │                      用户空间                                │
 │                                                             │
 │  ┌─────────────────┐          ┌─────────────────────────┐  │
-│  │  ssh-skill.js   │          │  ssh-skill-manager.js   │  │
+│  │  ssh_client.js  │          │  session_manager.js     │  │
 │  │  (CLI 客户端)    │          │  (后台管理进程)          │  │
 │  │                 │          │                         │  │
 │  │  - 解析命令     │◄────────►│  - 管理 SSH 连接        │  │
@@ -62,12 +62,12 @@
 ```
 erix-ssh-skill/
 ├── scripts/
-│   ├── ssh-skill.js          # CLI 客户端 (14KB)
-│   ├── ssh-skill-manager.js  # 后台管理进程 (10KB)
-│   └── db.js                 # SQLite 数据访问层 (16KB)
-├── data/                     # 数据目录 (gitignore)
-│   ├── ssh-skill.db          # SQLite 数据库
-│   ├── manager.pid           # Manager 进程 PID
+│   ├── ssh_client.js          # CLI 客户端 (14KB)
+│   ├── session_manager.js     # 后台管理进程 (10KB)
+│   └── db.js                  # SQLite 数据访问层 (16KB)
+├── data/                      # 数据目录 (gitignore)
+│   ├── ssh.db                 # SQLite 数据库
+│   ├── manager.pid            # Manager 进程 PID
 │   └── commands/             # 命令队列目录
 ├── docs/
 │   ├── design/               # 设计文档
@@ -240,7 +240,7 @@ Client                              Manager
 name: ssh
 description: SSH remote server management toolkit...
 allowed-tools:
-  - Bash(node scripts/ssh-skill.js *)
+  - Bash(node scripts/ssh_client.js *)
 ---
 ```
 
