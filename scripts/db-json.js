@@ -1,15 +1,22 @@
 /**
  * SSH Skill - JSON File Storage
- * 
+ *
  * Provides persistent storage for sessions, tasks, and messages using JSON files.
  * Each session is stored in a separate file for easy management.
- * 
+ *
  * Storage structure:
  * data/
  * ├── sessions.json           # Session index
  * └── sessions/
- *     ├── sess_xxx.json       # Session data (includes tasks and messages)
- *     └── sess_yyy.json
+ *     ├── sess_xxx.json       # Main file (recent 50 command rounds, self-cycling)
+ *     ├── sess_xxx.1.json     # Archive #1 (~100KB, full)
+ *     ├── sess_xxx.2.json     # Archive #2 (~100KB, full)
+ *     └── sess_xxx.3.json     # Archive #3 (current, being written)
+ *
+ * Archive strategy:
+ * - Every write to main file also appends to archive file
+ * - Main file self-cycles: keeps last 50 command rounds
+ * - Archive file: appends all messages, creates new file when > 100KB
  */
 
 const path = require('path');
@@ -19,6 +26,12 @@ const fs = require('fs');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
 const SESSIONS_INDEX_PATH = path.join(DATA_DIR, 'sessions.json');
+
+// Archive configuration
+const ARCHIVE_CONFIG = {
+  keepRecentCommands: 50,        // Keep this many recent command rounds in main file
+  archiveMaxSize: 100 * 1024     // Max archive file size: 100KB
+};
 
 // Ensure directories exist
 function ensureDirectories() {
@@ -74,6 +87,13 @@ function getSessionFilePath(sessionId) {
 }
 
 /**
+ * Get archive file path
+ */
+function getArchiveFilePath(sessionId, archiveNum) {
+  return path.join(SESSIONS_DIR, `${sessionId}.${archiveNum}.json`);
+}
+
+/**
  * Load session data from file
  */
 function loadSessionData(sessionId) {
@@ -113,6 +133,16 @@ function saveSessionsIndex(index) {
 function createSession(sessionId, config) {
   const now = new Date().toISOString();
   
+  // Create a safe config without sensitive data for disk storage
+  const safeConfig = {
+    host: config.host,
+    port: config.port || 22,
+    username: config.username,
+    private_key: config.private_key,
+    passphrase: config.passphrase ? '***REDACTED***' : undefined
+    // password is intentionally NOT saved to disk
+  };
+  
   const sessionData = {
     session: {
       id: sessionId,
@@ -120,7 +150,7 @@ function createSession(sessionId, config) {
       port: config.port || 22,
       username: config.username,
       status: 'connecting',
-      config: config,
+      config: safeConfig,
       created_at: now,
       updated_at: now,
       last_read_at: null
@@ -143,14 +173,17 @@ function createSession(sessionId, config) {
 
 /**
  * Get session by ID
+ * Note: Does NOT return config (contains sensitive data like password)
  */
 function getSession(sessionId) {
   const data = loadSessionData(sessionId);
   if (!data) return null;
   
   const session = data.session;
+  const { config, ...safeSession } = session;  // Exclude config with sensitive data
+  
   return {
-    ...session,
+    ...safeSession,
     unread_count: getUnreadCount(sessionId),
     message_count: data.messages.length
   };
@@ -214,13 +247,22 @@ function listSessions() {
 }
 
 /**
- * Delete session and its data
+ * Delete session and its data (including all archives)
  */
 function deleteSession(sessionId) {
-  // Remove data file
+  // Remove main data file
   const filePath = getSessionFilePath(sessionId);
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
+  }
+  
+  // Remove all archive files using readdir (handles gaps in numbering)
+  const files = fs.readdirSync(SESSIONS_DIR);
+  const archivePattern = new RegExp(`^${sessionId}\\.(\\d+)\\.json$`);
+  for (const file of files) {
+    if (archivePattern.test(file)) {
+      fs.unlinkSync(path.join(SESSIONS_DIR, file));
+    }
   }
   
   // Update index
@@ -378,6 +420,91 @@ function deleteTask(taskId) {
 // ============================================
 
 /**
+ * Get file size in bytes
+ */
+function getFileSize(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return 0;
+    const stats = fs.statSync(filePath);
+    return stats.size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Get current archive number (find the latest archive file)
+ */
+function getCurrentArchiveNum(sessionId) {
+  let num = 1;
+  while (fs.existsSync(getArchiveFilePath(sessionId, num))) {
+    num++;
+  }
+  return num > 1 ? num - 1 : 1;
+}
+
+/**
+ * Append message to archive file
+ * Creates new archive file when current one exceeds max size
+ */
+function appendToArchive(sessionId, message) {
+  let archiveNum = getCurrentArchiveNum(sessionId);
+  let archivePath = getArchiveFilePath(sessionId, archiveNum);
+  
+  // Check if current archive is full, create new one
+  if (fs.existsSync(archivePath) && getFileSize(archivePath) > ARCHIVE_CONFIG.archiveMaxSize) {
+    archiveNum++;
+    archivePath = getArchiveFilePath(sessionId, archiveNum);
+  }
+  
+  // Read existing archive or create new
+  let archiveData;
+  if (fs.existsSync(archivePath)) {
+    archiveData = readJsonFile(archivePath, { messages: [] });
+  } else {
+    archiveData = {
+      session_id: sessionId,
+      archive_num: archiveNum,
+      created_at: new Date().toISOString(),
+      messages: []
+    };
+  }
+  
+  // Append message
+  archiveData.messages.push(message);
+  archiveData.message_count = archiveData.messages.length;
+  archiveData.updated_at = new Date().toISOString();
+  
+  writeJsonFile(archivePath, archiveData);
+}
+
+/**
+ * Prune old messages from main file (keep recent N command rounds)
+ */
+function pruneOldMessages(data) {
+  const keepCount = ARCHIVE_CONFIG.keepRecentCommands;
+  
+  // Get all command messages sorted by time
+  const commandMessages = data.messages
+    .filter(m => m.type === 'command')
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  
+  if (commandMessages.length <= keepCount) {
+    return data;
+  }
+  
+  // Find cutoff timestamp (keep the last N commands)
+  const cutoffIndex = commandMessages.length - keepCount - 1;
+  const cutoffCommand = commandMessages[cutoffIndex];
+  const cutoffTimestamp = cutoffCommand.timestamp;
+  
+  // Keep only messages after cutoff
+  data.messages = data.messages.filter(m => m.timestamp > cutoffTimestamp);
+  
+  return data;
+}
+
+/**
  * Add a message
  */
 function addMessage(sessionId, message) {
@@ -398,9 +525,19 @@ function addMessage(sessionId, message) {
     read: false
   };
   
+  // 1. Add to main file
   data.messages.push(msg);
   data.session.updated_at = timestamp;
+  
+  // 2. Prune old messages (self-cycling)
+  const prunedData = pruneOldMessages(data);
+  data.messages = prunedData.messages;
+  
+  // 3. Save main file
   saveSessionData(sessionId, data);
+  
+  // 4. Append to archive file
+  appendToArchive(sessionId, msg);
   
   return getMessage(msgId);
 }
@@ -652,28 +789,135 @@ function getSessionStats(sessionId) {
   };
 }
 
+// ============================================
+// Archive Operations
+// ============================================
+
 /**
- * Clean up old messages (keep last N per session)
+ * List archive files for a session
  */
-function pruneMessages(sessionId, keepCount = 1000) {
-  const data = loadSessionData(sessionId);
-  if (!data) return { pruned: 0 };
+function listArchives(sessionId) {
+  const archives = [];
+  const files = fs.readdirSync(SESSIONS_DIR);
+  const archivePattern = new RegExp(`^${sessionId}\\.(\\d+)\\.json$`);
   
-  if (data.messages.length <= keepCount) {
-    return { pruned: 0 };
+  for (const file of files) {
+    const match = file.match(archivePattern);
+    if (!match) continue;
+    
+    const num = parseInt(match[1]);
+    const filePath = path.join(SESSIONS_DIR, file);
+    const stats = fs.statSync(filePath);
+    let messageCount = 0;
+    
+    try {
+      const archiveData = readJsonFile(filePath, { messages: [] });
+      messageCount = archiveData.messages ? archiveData.messages.length : 0;
+    } catch {
+      // Ignore parse errors
+    }
+    
+    archives.push({
+      num,
+      file,
+      path: filePath,
+      size: stats.size,
+      messageCount,
+      modified: stats.mtime
+    });
   }
   
-  // Sort by timestamp and keep most recent
-  data.messages.sort((a, b) => 
-    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+  // Sort by archive number
+  return archives.sort((a, b) => a.num - b.num);
+}
+
+/**
+ * Read archived messages from a specific archive number
+ */
+function readArchive(sessionId, archiveNum) {
+  const archivePath = getArchiveFilePath(sessionId, archiveNum);
   
-  const originalCount = data.messages.length;
-  data.messages = data.messages.slice(0, keepCount);
-  data.session.updated_at = new Date().toISOString();
-  saveSessionData(sessionId, data);
+  if (!fs.existsSync(archivePath)) {
+    return null;
+  }
   
-  return { pruned: originalCount - keepCount };
+  try {
+    return readJsonFile(archivePath, null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Search across all archives
+ */
+function searchArchives(sessionId, query, options = {}) {
+  const results = [];
+  const searchLower = query.toLowerCase();
+  
+  // Get all archive files using listArchives (handles gaps in numbering)
+  const archives = listArchives(sessionId);
+  
+  for (const archive of archives) {
+    const archiveData = readArchive(sessionId, archive.num);
+    if (!archiveData || !archiveData.messages) {
+      continue;
+    }
+    
+    const matches = archiveData.messages
+      .filter(m => m.content && m.content.toLowerCase().includes(searchLower))
+      .map(m => ({
+        ...m,
+        archive_num: archive.num
+      }));
+    
+    if (matches.length > 0) {
+      results.push(...matches);
+    }
+    
+    // Respect limit
+    if (options.limit && results.length >= options.limit) {
+      return results.slice(0, options.limit);
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * Get session info including archive status
+ */
+function getSessionInfo(sessionId) {
+  const session = getSession(sessionId);
+  if (!session) return null;
+  
+  const filePath = getSessionFilePath(sessionId);
+  const fileSize = getFileSize(filePath);
+  const archives = listArchives(sessionId);
+  const totalArchiveSize = archives.reduce((sum, a) => sum + a.size, 0);
+  const totalArchiveMessages = archives.reduce((sum, a) => sum + a.messageCount, 0);
+  
+  return {
+    ...session,
+    file_size: fileSize,
+    file_size_formatted: formatBytes(fileSize),
+    archive_count: archives.length,
+    archive_size: totalArchiveSize,
+    archive_size_formatted: formatBytes(totalArchiveSize),
+    archive_messages: totalArchiveMessages,
+    archives: archives.slice(0, 5) // Show last 5 archives
+  };
+}
+
+/**
+ * Format bytes to human readable
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 /**
@@ -713,7 +957,13 @@ module.exports = {
   getCommandHistory,
   searchMessages,
   getSessionStats,
-  pruneMessages,
+  
+  // Archive operations
+  listArchives,
+  readArchive,
+  searchArchives,
+  getSessionInfo,
+  ARCHIVE_CONFIG,
   
   // Database
   close
