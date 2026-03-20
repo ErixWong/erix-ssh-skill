@@ -30,6 +30,23 @@
 
     对于执行的任务，主动在tasks下创建目录并做好步骤和记录，及时做总结。
 
+### GitHub CLI 使用
+
+**Windows 环境注意事项：**
+- GitHub CLI 路径：`C:\Program Files\GitHub CLI\gh.exe`
+- 多行文本必须用 `--body-file` 参数，Windows 会截断 `--body` 参数
+- 示例：
+  ```bash
+  # 创建临时文件
+  echo "多行内容" > temp-body.md
+  
+  # 使用 --body-file
+  gh issue create --title "标题" --body-file temp-body.md
+  
+  # 清理临时文件
+  del temp-body.md
+  ```
+
 ### 命令执行
 
 ```
