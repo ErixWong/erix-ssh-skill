@@ -3,13 +3,13 @@
  * SSH Client - Client for the session manager
  *
  * Communicates with the background Session Manager.
- * Uses SQLite for persistent storage.
+ * Uses JSON files for persistent storage (no native dependencies).
  */
 
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const db = require('./db');
+const db = require('./db-json');
 
 // Data directory paths
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -631,7 +631,7 @@ function list() {
  * Show help
  */
 function help() {
-  console.log('SSH Client - Session-based SSH client (SQLite storage)');
+  console.log('SSH Client - Session-based SSH client (JSON storage)');
   console.log('');
   console.log('Usage: node ssh_client.js <command> [options]');
   console.log('');
@@ -654,7 +654,7 @@ function help() {
   console.log('  delete             Delete a session');
   console.log('  list               List all sessions');
   console.log('');
-  console.log('Storage: ./data/ssh.db (SQLite)');
+  console.log('Storage: ./data/sessions/ (JSON files)');
   console.log('');
   console.log('Sudo Password Options (secure):');
   console.log('  --password-file FILE   Read password from file');

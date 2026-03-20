@@ -1,6 +1,6 @@
 ---
 name: ssh
-description: SSH remote server management toolkit with session support. Use when Claude needs to connect to remote servers via SSH, execute commands, manage files, or perform system administration tasks. Supports persistent sessions, async command execution, and message history with JSON file storage.
+description: SSH remote server management toolkit with session support. Use when Kilo Code needs to connect to remote servers via SSH, execute commands, manage files, or perform system administration tasks. Supports persistent sessions, async command execution, and message history with JSON file storage.
 argument-hint: "[connect|exec|sudo|history|output|disconnect] --session ID"
 user-invocable: false
 allowed-tools: []
@@ -418,10 +418,8 @@ Session-based SSH client with async execution and JSON file storage.
 ## 系统要求
 
 - Node.js 18+
-- 首次使用前运行 `npm install`（仅需 ssh2 依赖）
+- 首次使用前运行 `npm install`（仅需 ssh2 依赖，无需原生编译）
 
 ---
 
-*最后更新: 2026-03-12 - 按 skill-manager 标准格式重写*
-
-✌Bazinga！
+*最后更新: 2026-03-20 - 适配 Kilo Code 格式*

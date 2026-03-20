@@ -3,14 +3,14 @@
  * Session Manager - Background process
  *
  * Manages SSH sessions and executes commands.
- * Uses SQLite for persistent storage.
+ * Uses JSON files for persistent storage (no native dependencies).
  */
 
 const { Client } = require('ssh2');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const db = require('./db');
+const db = require('./db-json');
 
 // Data directory paths
 const DATA_DIR = path.join(__dirname, '..', 'data');

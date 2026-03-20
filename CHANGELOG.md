@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-03-20
+
+### Changed
+- **重大变更**: 将 SQLite 存储替换为 JSON 文件存储
+  - 移除 `better-sqlite3` 原生依赖，简化部署
+  - 新增 `scripts/db-json.js` 实现 JSON 文件存储
+  - 每个会话独立存储在 `./data/sessions/sess_xxx.json`
+  - 会话索引存储在 `./data/sessions.json`
+
+### Benefits
+- 无需原生模块编译，跨平台部署更简单
+- 技能安装只需 `npm install ssh2`，无编译依赖
+- 数据文件可直接查看和备份
+
+---
+
 ## [0.1.0] - TBD
 
 ### Added
