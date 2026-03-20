@@ -145,9 +145,133 @@ function validatePort(port) {
 }
 
 /**
+ * Read and parse connection config file
+ * Supports both JSON and simple key-value format
+ */
+function readConfigFile(configPath) {
+  try {
+    const absolutePath = configPath.replace('~', require('os').homedir());
+    
+    if (!fs.existsSync(absolutePath)) {
+      return { error: `Config file not found: ${absolutePath}` };
+    }
+    
+    const content = fs.readFileSync(absolutePath, 'utf-8').trim();
+    
+    // Try JSON format first
+    if (content.startsWith('{') || content.startsWith('[')) {
+      try {
+        const json = JSON.parse(content);
+        return { config: json };
+      } catch (e) {
+        return { error: `Invalid JSON format: ${e.message}` };
+      }
+    }
+    
+    // Parse simple key-value format (key: value or key=value)
+    const config = {};
+    const lines = content.split('\n');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) {
+        continue;
+      }
+      
+      // Support both colon and equals separator
+      const match = trimmed.match(/^([^:=\s]+)\s*[:=]\s*(.*)$/);
+      if (match) {
+        const key = match[1].trim().replace(/-/g, '_');
+        let value = match[2].trim();
+        
+        // Remove quotes if present
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        
+        config[key] = value;
+      }
+    }
+    
+    return { config };
+  } catch (err) {
+    return { error: `Failed to read config file: ${err.message}` };
+  }
+}
+
+/**
+ * Connect to a server using config file
+ */
+function connectFromConfig(params) {
+  if (!params.config) {
+    return output({ success: false, error: '--config option is required' });
+  }
+  
+  const result = readConfigFile(params.config);
+  
+  if (result.error) {
+    return output({ success: false, error: result.error });
+  }
+  
+  const config = result.config;
+  
+  // Validate required fields
+  if (!config.host) {
+    return output({ success: false, error: 'host is required in config file' });
+  }
+  if (!config.username) {
+    return output({ success: false, error: 'username is required in config file' });
+  }
+  
+  // Validate format
+  const hostValidation = validateHost(config.host);
+  if (!hostValidation.valid) {
+    return output({ success: false, error: hostValidation.error });
+  }
+  
+  const portValidation = validatePort(config.port);
+  if (!portValidation.valid) {
+    return output({ success: false, error: portValidation.error });
+  }
+  
+  const sessionId = params.session_id || db.generateId('sess');
+  
+  const connectionConfig = {
+    host: config.host,
+    port: parseInt(config.port) || 22,
+    username: config.username,
+    password: config.password,
+    private_key: config.private_key || config.privateKey,
+    passphrase: config.passphrase
+  };
+  
+  db.createSession(sessionId, connectionConfig);
+  
+  sendCommand({
+    action: 'connect',
+    session_id: sessionId,
+    config: connectionConfig
+  });
+  
+  output({
+    success: true,
+    session_id: sessionId,
+    message: `Connection request sent for ${connectionConfig.host}:${connectionConfig.port}`,
+    config_source: params.config
+  });
+}
+
+/**
  * Connect to a server
  */
 function connect(params) {
+  // If --config option is provided, use config file
+  if (params.config) {
+    return connectFromConfig(params);
+  }
+  
   // Validate required parameters
   if (!params.host) {
     return output({ success: false, error: 'host is required' });
@@ -656,15 +780,41 @@ function help() {
   console.log('');
   console.log('Storage: ./data/sessions/ (JSON files)');
   console.log('');
+  console.log('Connect Options:');
+  console.log('  --host HOST            Server hostname or IP');
+  console.log('  --port PORT            Server port (default: 22)');
+  console.log('  --username USER        Username for authentication');
+  console.log('  --password PASS        Password for authentication');
+  console.log('  --private-key KEY      Path to private key file');
+  console.log('  --passphrase PHRASE    Passphrase for private key');
+  console.log('  --config FILE          Read connection config from file (JSON or key-value format)');
+  console.log('');
   console.log('Sudo Password Options (in order of priority):');
   console.log('  --password-file FILE   Read password from file');
   console.log('  SUDO_PASSWORD env      Set environment variable');
   console.log('  (interactive)          Will prompt if TTY available');
   console.log('  (cached)               Use password from SSH connection (automatic)');
   console.log('');
+  console.log('Config File Format (JSON):');
+  console.log('  {');
+  console.log('    "host": "example.com",');
+  console.log('    "port": 22,');
+  console.log('    "username": "admin",');
+  console.log('    "password": "secret",');
+  console.log('    "privateKey": "~/.ssh/id_rsa",');
+  console.log('    "passphrase": "key_passphrase"');
+  console.log('  }');
+  console.log('');
+  console.log('Config File Format (Key-Value):');
+  console.log('  host: example.com');
+  console.log('  port: 22');
+  console.log('  username: admin');
+  console.log('  password: secret');
+  console.log('');
   console.log('Examples:');
   console.log('  node ssh_client.js start-manager');
   console.log('  node ssh_client.js connect --host 192.168.1.100 --username admin');
+  console.log('  node ssh_client.js connect --config ./hosts/server.json');
   console.log('  node ssh_client.js exec --session sess_xxx --command "df -h"');
   console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update"');
   console.log('  SUDO_PASSWORD="secret" node ssh_client.js sudo --session sess_xxx --command "apt update"');
