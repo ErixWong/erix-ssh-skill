@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-03-20
+
+### Added
+- **自动归档**: 会话消息自动归档，文件轮转（每文件 100KB）
+- **Sudo 支持**: 交互式 sudo，密码缓存支持重连
+
+### Changed
+- **归档设计简化**: 代码从 ~1300 行减少到 ~970 行
+  - 移除复杂的打包机制
+  - 简化 ARCHIVE_CONFIG 从 5 个参数到 2 个
+  - 实现"写入即归档"模式
+  - 主文件保留最近 50 轮命令
+
+### Fixed
+- 归档文件编号间隙问题（使用 readdir + regex 替代顺序编号假设）
+
+---
+
 ## [0.3.0] - 2026-03-20
 
 ### Changed
