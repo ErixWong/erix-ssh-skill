@@ -48,3 +48,6 @@ docs/*.html
 
 # Host connection files (sensitive data)
 hosts/
+
+# Benchmark scripts (not needed in repo)
+scripts/vllm-benchmark.js
