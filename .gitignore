@@ -45,3 +45,6 @@ temp/
 docs/tracking/
 docs/tasks/
 docs/*.html
+
+# Host connection files (sensitive data)
+hosts/

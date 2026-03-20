@@ -20,6 +20,14 @@ const COMMANDS_DIR = path.join(DATA_DIR, 'commands');
 // Active SSH connections
 const connections = new Map();
 
+// Sudo password cache (sessionId -> password)
+// Stored in memory only, not persisted to disk for security
+const sudoPasswordCache = new Map();
+
+// Full config cache (sessionId -> config with password)
+// Stored in memory only for reconnection support
+const configCache = new Map();
+
 /**
  * Output JSON
  */
@@ -63,9 +71,16 @@ function writePid() {
 async function setupConnection(sessionId, config) {
   const conn = new Client();
   
+  // Cache full config (with password) in memory for reconnection
+  configCache.set(sessionId, config);
+  
   return new Promise((resolve, reject) => {
     conn.on('ready', () => {
       connections.set(sessionId, conn);
+      // Cache password for sudo commands (in memory only)
+      if (config.password) {
+        sudoPasswordCache.set(sessionId, config.password);
+      }
       db.updateSessionStatus(sessionId, 'connected');
       db.addMessage(sessionId, {
         type: 'system',
@@ -477,7 +492,26 @@ async function processCommand(cmd) {
     }
     
     case 'sudo': {
-      await executeSudoCommand(cmd.session_id, cmd.task_id, cmd.command, cmd.password);
+      // Use provided password or fall back to cached password from session
+      let password = cmd.password;
+      if (!password) {
+        password = sudoPasswordCache.get(cmd.session_id);
+      }
+      if (!password) {
+        const task = db.getTask(cmd.task_id);
+        if (task) {
+          task.status = 'error';
+          task.output = 'No password available for sudo. Either provide --password or connect with password.';
+          db.updateTask(task);
+        }
+        db.addMessage(cmd.session_id, {
+          type: 'error',
+          task_id: cmd.task_id,
+          content: 'No password available for sudo'
+        });
+        break;
+      }
+      await executeSudoCommand(cmd.session_id, cmd.task_id, cmd.command, password);
       break;
     }
     
@@ -514,14 +548,19 @@ async function restoreSessions() {
   
   for (const sessionInfo of sessions) {
     if (sessionInfo.status === 'connected') {
-      const session = db.getSession(sessionInfo.id);
-      if (session && session.config) {
+      // Use cached config (with password) if available, otherwise use disk config
+      const config = configCache.get(sessionInfo.id);
+      if (config) {
         try {
           console.log(`Restoring session ${sessionInfo.id}...`);
-          await setupConnection(sessionInfo.id, session.config);
+          await setupConnection(sessionInfo.id, config);
         } catch (err) {
           console.error(`Failed to restore session ${sessionInfo.id}: ${err.message}`);
         }
+      } else {
+        // No cached config - password not available, cannot reconnect
+        console.log(`Session ${sessionInfo.id} cannot be restored (no cached credentials)`);
+        db.updateSessionStatus(sessionInfo.id, 'disconnected');
       }
     }
   }

@@ -16,6 +16,8 @@
 - **JSON Storage** - Simple file-based storage, no native dependencies required
 - **Message History** - Full command/output history with read/unread status
 - **Reconnect Support** - Reconnect disconnected sessions without re-entering credentials
+- **Auto Archive** - Automatic session archiving with file rotation (100KB per file)
+- **Sudo Support** - Interactive sudo with password caching for reconnection
 
 ### Installation
 
@@ -101,6 +103,8 @@ For more details, see [Kilo Code Skills Documentation](https://kilo.ai/docs/cust
 - **JSON 存储** - 简单的文件存储，无需原生依赖
 - **消息历史** - 完整的命令/输出历史，已读未读状态
 - **重连支持** - 断开后重连，无需重新输入凭据
+- **自动归档** - 自动会话归档，文件轮转（每文件 100KB）
+- **Sudo 支持** - 交互式 sudo，密码缓存支持重连
 
 ### 安装
 

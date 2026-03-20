@@ -312,7 +312,7 @@ async function promptPassword(promptText) {
 }
 
 /**
- * Get password from various sources (priority: file > env > interactive)
+ * Get password from various sources (priority: file > env > interactive > cached)
  */
 async function getPassword(params) {
   // 1. From password file (highest priority for scripting)
@@ -330,14 +330,13 @@ async function getPassword(params) {
   // 3. Interactive prompt (if tty)
   if (process.stdin.isTTY) {
     const password = await promptPassword('[sudo] Password: ');
-    if (!password) {
-      return { error: 'Password is required for sudo' };
+    if (password) {
+      return { password, source: 'interactive' };
     }
-    return { password, source: 'interactive' };
   }
   
-  // 4. No password available
-  return { error: 'Password required. Use one of: --password-file, SUDO_PASSWORD env, or interactive mode' };
+  // 4. Return null to let session manager use cached password
+  return { password: null, source: 'cached' };
 }
 
 /**
@@ -359,13 +358,13 @@ async function sudo(params) {
   // Warn if using deprecated --password parameter
   if (params.password) {
     console.error('WARNING: --password CLI argument is deprecated and ignored for security reasons.');
-    console.error('Use one of: --password-file, SUDO_PASSWORD env, or interactive mode.');
+    console.error('Use one of: --password-file, SUDO_PASSWORD env, interactive mode, or cached password from session.');
   }
   
   const session = db.getSession(sessionId);
   if (!session) return output({ success: false, error: 'Session not found' });
   
-  // Get password from secure sources
+  // Get password from secure sources (may return null to use cached password)
   const pwResult = await getPassword(params);
   if (pwResult.error) {
     return output({ success: false, error: pwResult.error });
@@ -374,12 +373,13 @@ async function sudo(params) {
   const taskId = db.generateId('task');
   db.createTask(taskId, sessionId, `sudo ${params.command}`);
   
+  // Send command with password (null means use cached password from session)
   sendCommand({
     action: 'sudo',
     session_id: sessionId,
     task_id: taskId,
     command: params.command,
-    password: pwResult.password
+    password: pwResult.password  // may be null, session manager will use cached password
   });
   
   output({ success: true, task_id: taskId, message: 'Sudo command submitted' });
@@ -656,10 +656,11 @@ function help() {
   console.log('');
   console.log('Storage: ./data/sessions/ (JSON files)');
   console.log('');
-  console.log('Sudo Password Options (secure):');
+  console.log('Sudo Password Options (in order of priority):');
   console.log('  --password-file FILE   Read password from file');
   console.log('  SUDO_PASSWORD env      Set environment variable');
-  console.log('  (interactive)          Will prompt if no password provided');
+  console.log('  (interactive)          Will prompt if TTY available');
+  console.log('  (cached)               Use password from SSH connection (automatic)');
   console.log('');
   console.log('Examples:');
   console.log('  node ssh_client.js start-manager');
