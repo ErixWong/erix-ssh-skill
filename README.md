@@ -56,6 +56,56 @@ node scripts/ssh_client.js output --task task_xxx
 | `output` | Get task output |
 | `list` | List all sessions |
 
+### Connection Config File
+
+You can use a config file to simplify server connections. The `connect` command supports `--config` option to read connection settings from a file.
+
+#### JSON Format
+
+```json
+{
+  "host": "example.com",
+  "port": 22,
+  "username": "admin",
+  "password": "your_password",
+  "privateKey": "~/.ssh/id_rsa",
+  "passphrase": "key_passphrase"
+}
+```
+
+#### Key-Value Format
+
+```
+# Server connection config
+host: example.com
+port: 22
+username: admin
+password: your_password
+```
+
+#### Usage
+
+```bash
+# Connect using config file
+node scripts/ssh_client.js connect --config ./hosts/server.json
+
+# Or with absolute path
+node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
+```
+
+#### Config File Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `host` | Yes | Server hostname or IP address |
+| `port` | No | Server port (default: 22) |
+| `username` | Yes | Username for authentication |
+| `password` | No* | Password for authentication |
+| `privateKey` | No* | Path to private key file (supports `~` for home directory) |
+| `passphrase` | No | Passphrase for encrypted private key |
+
+*Either `password` or `privateKey` is required for authentication.
+
 ### Requirements
 
 - Node.js 18+
@@ -142,6 +192,56 @@ node scripts/ssh_client.js output --task task_xxx
 | `history` | 获取命令历史 |
 | `output` | 获取任务输出 |
 | `list` | 列出所有会话 |
+
+### 连接配置文件
+
+可以使用配置文件简化服务器连接。`connect` 命令支持 `--config` 选项从文件读取连接配置。
+
+#### JSON 格式
+
+```json
+{
+  "host": "example.com",
+  "port": 22,
+  "username": "admin",
+  "password": "your_password",
+  "privateKey": "~/.ssh/id_rsa",
+  "passphrase": "key_passphrase"
+}
+```
+
+#### 键值对格式
+
+```
+# 服务器连接配置
+host: example.com
+port: 22
+username: admin
+password: your_password
+```
+
+#### 使用方法
+
+```bash
+# 使用配置文件连接
+node scripts/ssh_client.js connect --config ./hosts/server.json
+
+# 或使用绝对路径
+node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
+```
+
+#### 配置文件字段
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `host` | 是 | 服务器主机名或 IP 地址 |
+| `port` | 否 | 服务器端口（默认：22） |
+| `username` | 是 | 认证用户名 |
+| `password` | 否* | 认证密码 |
+| `privateKey` | 否* | 私钥文件路径（支持 `~` 表示主目录） |
+| `passphrase` | 否 | 加密私钥的密码 |
+
+*`password` 或 `privateKey` 至少需要提供一个用于认证。
 
 ### 系统要求
 
