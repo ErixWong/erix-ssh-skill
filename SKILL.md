@@ -22,7 +22,7 @@ Session-based SSH client with async execution and JSON file storage.
 
 ## 工具清单
 
-### start_manager
+### start-manager
 
 启动后台 Session Manager 进程。必须在执行任何 SSH 操作前启动。
 
@@ -42,7 +42,7 @@ Session-based SSH client with async execution and JSON file storage.
 
 ---
 
-### stop_manager
+### stop-manager
 
 停止后台 Session Manager 进程。
 
@@ -393,7 +393,7 @@ Session-based SSH client with async execution and JSON file storage.
 ## 典型工作流程
 
 ```
-1. start_manager → 启动后台管理进程
+1. start-manager → 启动后台管理进程
 2. connect → 建立 SSH 连接，保存返回的 session_id
 3. exec/sudo → 执行命令，获取 task_id
 4. history → 查看命令执行状态
