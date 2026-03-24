@@ -1,4 +1,4 @@
-# SSH Client
+# SSH Skill
 
 [English](#english) | [中文](#中文)
 
@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-> Claude SSH Client for remote server management with session persistence, async execution, and JSON file storage.
+> SSH Skill for AI assistants (Claude, Kilo Code, etc.) to manage remote servers with session persistence, async execution, and JSON file storage.
 
 ### Features
 
@@ -201,7 +201,7 @@ For more details, see [Kilo Code Skills Documentation](https://kilo.ai/docs/cust
 <a name="中文"></a>
 ## 中文
 
-> Claude SSH 客户端，用于远程服务器管理，支持会话持久化、异步执行和 JSON 文件存储。
+> SSH Skill 是为 AI 助手（Claude、Kilo Code 等）设计的远程服务器管理技能，支持会话持久化、异步执行和 JSON 文件存储。
 
 ### 特性
 
