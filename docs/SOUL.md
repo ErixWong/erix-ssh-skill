@@ -90,6 +90,53 @@ tasks/
    - 用 sudo 复制到目标位置：`sudo cp /tmp/file /target/path`
 3. 优点：避免 shell 转义、引号嵌套、特殊字符等问题
 
+### 2026-03-24 (1Panel Docker Compose 配置修改)
+
+**问题**: 需要修改 1Panel 管理的容器配置，但直接用 docker run 创建容器会导致 1Panel 无法管理。
+
+**教训**:
+
+1. **1Panel 应用目录结构**：
+   ```
+   /opt/1panel/apps/<应用名>/<应用名>/
+   ├── docker-compose.yml  # 主要配置文件
+   ├── .env                # 环境变量
+   ├── data/               # 数据目录
+   └── data.yml            # 应用元数据
+   ```
+
+2. **修改配置的正确步骤**：
+   ```bash
+   # 1. 备份原配置
+   sudo cp /opt/1panel/apps/<应用>/<应用>/docker-compose.yml{,.bak}
+
+   # 2. 用 base64 方式创建新配置
+   echo 'BASE64_CONTENT' | base64 -d > /tmp/new-compose.yml
+   sudo cp /tmp/new-compose.yml /opt/1panel/apps/<应用>/<应用>/docker-compose.yml
+
+   # 3. 重启容器
+   sudo bash -c 'cd /opt/1panel/apps/<应用>/<应用> && docker compose down && docker compose up -d'
+   ```
+
+3. **网络配置要点**：
+   - 1Panel 应用通常使用 `1panel-network` 外部网络
+   - 配置格式：
+     ```yaml
+     networks:
+         1panel-network:
+             external: true
+     services:
+         <服务名>:
+             networks:
+                 1panel-network:
+                     ipv4_address: 172.18.0.x  # 指定静态IP
+     ```
+
+4. **注意事项**：
+   - 不要直接用 `docker run` 创建容器，否则 1Panel 无法管理
+   - 修改配置后需要 `docker compose down && docker compose up -d` 生效
+   - `.env` 文件中的变量会在 docker-compose.yml 中通过 `${VAR}` 引用
+
 ---
 
 ✌Bazinga！
