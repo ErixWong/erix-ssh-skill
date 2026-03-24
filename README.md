@@ -52,6 +52,7 @@ node scripts/ssh_client.js output --task task_xxx
 | `disconnect` | Disconnect from server |
 | `reconnect` | Reconnect a disconnected session |
 | `exec` | Execute command (async) |
+| `sudo` | Execute sudo command (password cached) |
 | `history` | Get command history |
 | `output` | Get task output |
 | `list` | List all sessions |
@@ -73,24 +74,11 @@ You can use a config file to simplify server connections. The `connect` command 
 }
 ```
 
-#### Key-Value Format
-
-```
-# Server connection config
-host: example.com
-port: 22
-username: admin
-password: your_password
-```
-
 #### Usage
 
 ```bash
 # Connect using config file
 node scripts/ssh_client.js connect --config ./hosts/server.json
-
-# Or with absolute path
-node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 ```
 
 #### Config File Fields
@@ -105,6 +93,75 @@ node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 | `passphrase` | No | Passphrase for encrypted private key |
 
 *Either `password` or `privateKey` is required for authentication.
+
+### Best Practices
+
+#### Security Guidelines
+
+1. **Never read connection config files** - Use `--config` parameter directly
+   ```bash
+   # ✅ Correct - pass config file path
+   node scripts/ssh_client.js connect --config ./hosts/server.json
+   
+   # ❌ Wrong - reading config file content
+   cat ./hosts/server.json  # DON'T DO THIS
+   ```
+
+2. **Never store passwords to disk** - Passwords are cached in memory only
+   - The SSH client automatically caches passwords for sudo commands
+   - No need to create password files for sudo operations
+
+3. **Save Session ID immediately** - Session ID is your access credential
+   - Lost Session ID = Lost access (no session list for security)
+   - Only show first 8 characters for identification: `sess_abc1...`
+
+#### LLM Usage Guidelines
+
+When using this skill with AI assistants (Claude, Kilo Code, etc.):
+
+1. **Read SKILL.md first** - Before any SSH operation, the AI must read the skill documentation
+
+2. **Trust existing features** - Don't reinvent the wheel
+   - Sudo password caching is already implemented
+   - Session management is already handled
+
+3. **System differences** - Know your target OS
+   | System | Sudo Group |
+   |--------|------------|
+   | RHEL/CentOS/AlmaLinux | `wheel` |
+   | Debian/Ubuntu | `sudo` |
+
+#### Typical Workflow
+
+```bash
+# 1. Start session manager
+node scripts/ssh_client.js start-manager
+
+# 2. Connect using config file (recommended)
+node scripts/ssh_client.js connect --config ./hosts/server.json
+# Save the returned session_id!
+
+# 3. Execute commands
+node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
+
+# 4. For sudo commands - just use sudo, password is cached
+node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
+
+# 5. Check output
+node scripts/ssh_client.js output --task task_xxx
+
+# 6. Disconnect when done
+node scripts/ssh_client.js disconnect --session sess_xxx
+```
+
+#### Common Mistakes to Avoid
+
+| Mistake | Correct Approach |
+|---------|------------------|
+| Reading config file content | Use `--config` parameter directly |
+| Creating password files for sudo | Just use `sudo` command, password is cached |
+| Losing session_id | Save it immediately after connection |
+| Using wrong sudo group | Check OS: `wheel` for RHEL, `sudo` for Debian |
 
 ### Requirements
 
@@ -189,6 +246,7 @@ node scripts/ssh_client.js output --task task_xxx
 | `disconnect` | 断开连接 |
 | `reconnect` | 重连已断开的会话 |
 | `exec` | 执行命令（异步） |
+| `sudo` | 执行 sudo 命令（密码已缓存） |
 | `history` | 获取命令历史 |
 | `output` | 获取任务输出 |
 | `list` | 列出所有会话 |
@@ -210,24 +268,11 @@ node scripts/ssh_client.js output --task task_xxx
 }
 ```
 
-#### 键值对格式
-
-```
-# 服务器连接配置
-host: example.com
-port: 22
-username: admin
-password: your_password
-```
-
 #### 使用方法
 
 ```bash
 # 使用配置文件连接
 node scripts/ssh_client.js connect --config ./hosts/server.json
-
-# 或使用绝对路径
-node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 ```
 
 #### 配置文件字段
@@ -242,6 +287,75 @@ node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 | `passphrase` | 否 | 加密私钥的密码 |
 
 *`password` 或 `privateKey` 至少需要提供一个用于认证。
+
+### 最佳实践
+
+#### 安全准则
+
+1. **禁止读取连接配置文件** - 直接使用 `--config` 参数
+   ```bash
+   # ✅ 正确 - 传递配置文件路径
+   node scripts/ssh_client.js connect --config ./hosts/server.json
+   
+   # ❌ 错误 - 读取配置文件内容
+   cat ./hosts/server.json  # 不要这样做
+   ```
+
+2. **禁止将密码存储到磁盘** - 密码仅在内存中缓存
+   - SSH 客户端自动缓存密码用于 sudo 命令
+   - 无需为 sudo 操作创建密码文件
+
+3. **立即保存 Session ID** - Session ID 是访问凭证
+   - 丢失 Session ID = 丢失访问权限（出于安全考虑不提供会话列表）
+   - 仅显示前 8 个字符用于识别：`sess_abc1...`
+
+#### LLM 使用指南
+
+与 AI 助手（Claude、Kilo Code 等）配合使用时：
+
+1. **先阅读 SKILL.md** - 在任何 SSH 操作之前，AI 必须阅读技能文档
+
+2. **信任现有功能** - 不要重复造轮子
+   - Sudo 密码缓存已实现
+   - 会话管理已处理
+
+3. **系统差异** - 了解目标操作系统
+   | 系统 | Sudo 组 |
+   |------|---------|
+   | RHEL/CentOS/AlmaLinux | `wheel` |
+   | Debian/Ubuntu | `sudo` |
+
+#### 典型工作流程
+
+```bash
+# 1. 启动会话管理器
+node scripts/ssh_client.js start-manager
+
+# 2. 使用配置文件连接（推荐）
+node scripts/ssh_client.js connect --config ./hosts/server.json
+# 保存返回的 session_id！
+
+# 3. 执行命令
+node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
+
+# 4. 执行 sudo 命令 - 直接使用 sudo，密码已缓存
+node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
+
+# 5. 检查输出
+node scripts/ssh_client.js output --task task_xxx
+
+# 6. 完成后断开连接
+node scripts/ssh_client.js disconnect --session sess_xxx
+```
+
+#### 常见错误
+
+| 错误 | 正确做法 |
+|------|----------|
+| 读取配置文件内容 | 直接使用 `--config` 参数 |
+| 为 sudo 创建密码文件 | 直接使用 `sudo` 命令，密码已缓存 |
+| 丢失 session_id | 连接后立即保存 |
+| 使用错误的 sudo 组 | 检查操作系统：RHEL 用 `wheel`，Debian 用 `sudo` |
 
 ### 系统要求
 
@@ -275,77 +389,6 @@ node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 3. 在技能目录中运行 `npm install` 安装依赖（仅需 `ssh2`，无需原生编译）
 
 更多详情请参考 [Kilo Code Skills 文档](https://kilo.ai/docs/customize/skills)。
-
----
-
-## Best Practices / 最佳实践
-
-### Security Guidelines / 安全准则
-
-1. **Never read connection config files** - Use `--config` parameter directly
-   ```bash
-   # ✅ Correct - pass config file path
-   node scripts/ssh_client.js connect --config ./hosts/server.json
-   
-   # ❌ Wrong - reading config file content
-   cat ./hosts/server.json  # DON'T DO THIS
-   ```
-
-2. **Never store passwords to disk** - Passwords are cached in memory only
-   - The SSH client automatically caches passwords for sudo commands
-   - No need to create password files for sudo operations
-
-3. **Save Session ID immediately** - Session ID is your access credential
-   - Lost Session ID = Lost access (no session list for security)
-   - Only show first 8 characters for identification: `sess_abc1...`
-
-### LLM Usage Guidelines / LLM 使用指南
-
-When using this skill with AI assistants (Claude, Kilo Code, etc.):
-
-1. **Read SKILL.md first** - Before any SSH operation, the AI must read the skill documentation
-
-2. **Trust existing features** - Don't reinvent the wheel
-   - Sudo password caching is already implemented
-   - Session management is already handled
-
-3. **System differences** - Know your target OS
-   | System | Sudo Group |
-   |--------|------------|
-   | RHEL/CentOS/AlmaLinux | `wheel` |
-   | Debian/Ubuntu | `sudo` |
-
-### Typical Workflow / 典型工作流程
-
-```bash
-# 1. Start session manager
-node scripts/ssh_client.js start-manager
-
-# 2. Connect using config file (recommended)
-node scripts/ssh_client.js connect --config ./hosts/server.json
-# Save the returned session_id!
-
-# 3. Execute commands
-node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
-
-# 4. For sudo commands - just use sudo, password is cached
-node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
-
-# 5. Check output
-node scripts/ssh_client.js output --task task_xxx
-
-# 6. Disconnect when done
-node scripts/ssh_client.js disconnect --session sess_xxx
-```
-
-### Common Mistakes to Avoid / 常见错误
-
-| Mistake | Correct Approach |
-|---------|------------------|
-| Reading config file content | Use `--config` parameter directly |
-| Creating password files for sudo | Just use `sudo` command, password is cached |
-| Losing session_id | Save it immediately after connection |
-| Using wrong sudo group | Check OS: `wheel` for RHEL, `sudo` for Debian |
 
 ---
 
