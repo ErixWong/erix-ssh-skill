@@ -41,9 +41,10 @@ coverage/
 tmp/
 temp/
 
+# Backup files
+*.bak
+
 # Documentation - 只忽略生成的文档，保留设计文档
-docs/tracking/
-docs/tasks/
 docs/*.html
 
 # Host connection files (sensitive data)
