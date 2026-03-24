@@ -278,6 +278,77 @@ node scripts/ssh_client.js connect --config ~/configs/ssh/server.json
 
 ---
 
+## Best Practices / 最佳实践
+
+### Security Guidelines / 安全准则
+
+1. **Never read connection config files** - Use `--config` parameter directly
+   ```bash
+   # ✅ Correct - pass config file path
+   node scripts/ssh_client.js connect --config ./hosts/server.json
+   
+   # ❌ Wrong - reading config file content
+   cat ./hosts/server.json  # DON'T DO THIS
+   ```
+
+2. **Never store passwords to disk** - Passwords are cached in memory only
+   - The SSH client automatically caches passwords for sudo commands
+   - No need to create password files for sudo operations
+
+3. **Save Session ID immediately** - Session ID is your access credential
+   - Lost Session ID = Lost access (no session list for security)
+   - Only show first 8 characters for identification: `sess_abc1...`
+
+### LLM Usage Guidelines / LLM 使用指南
+
+When using this skill with AI assistants (Claude, Kilo Code, etc.):
+
+1. **Read SKILL.md first** - Before any SSH operation, the AI must read the skill documentation
+
+2. **Trust existing features** - Don't reinvent the wheel
+   - Sudo password caching is already implemented
+   - Session management is already handled
+
+3. **System differences** - Know your target OS
+   | System | Sudo Group |
+   |--------|------------|
+   | RHEL/CentOS/AlmaLinux | `wheel` |
+   | Debian/Ubuntu | `sudo` |
+
+### Typical Workflow / 典型工作流程
+
+```bash
+# 1. Start session manager
+node scripts/ssh_client.js start-manager
+
+# 2. Connect using config file (recommended)
+node scripts/ssh_client.js connect --config ./hosts/server.json
+# Save the returned session_id!
+
+# 3. Execute commands
+node scripts/ssh_client.js exec --session sess_xxx --command "df -h"
+
+# 4. For sudo commands - just use sudo, password is cached
+node scripts/ssh_client.js sudo --session sess_xxx --command "apt update"
+
+# 5. Check output
+node scripts/ssh_client.js output --task task_xxx
+
+# 6. Disconnect when done
+node scripts/ssh_client.js disconnect --session sess_xxx
+```
+
+### Common Mistakes to Avoid / 常见错误
+
+| Mistake | Correct Approach |
+|---------|------------------|
+| Reading config file content | Use `--config` parameter directly |
+| Creating password files for sudo | Just use `sudo` command, password is cached |
+| Losing session_id | Save it immediately after connection |
+| Using wrong sudo group | Check OS: `wheel` for RHEL, `sudo` for Debian |
+
+---
+
 ## License
 
 MIT
