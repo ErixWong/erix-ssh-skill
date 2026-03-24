@@ -76,6 +76,20 @@ tasks/
 2. 各主机维护记录放在 `tasks/maintenance/<主机名>/` 目录
 3. 维护记录按日期命名，如 `2026-03-24.md`
 
+### 2026-03-24 (文件编辑)
+
+**问题**: 通过 SSH 编辑远程文件时，使用 echo、cat、here-document 等方式遇到转义问题，命令行参数传递困难。
+
+**教训**:
+
+1. **远程文件编辑统一使用 base64 传输方式**
+2. 步骤：
+   - 在本地准备好文件内容
+   - 使用 base64 编码：`echo '内容' | base64 -w 0` (Linux) 或在本地计算 base64
+   - 传输到远程：`echo 'BASE64_STRING' | base64 -d > /path/to/file`
+   - 用 sudo 复制到目标位置：`sudo cp /tmp/file /target/path`
+3. 优点：避免 shell 转义、引号嵌套、特殊字符等问题
+
 ---
 
 ✌Bazinga！
