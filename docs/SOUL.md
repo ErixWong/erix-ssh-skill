@@ -90,6 +90,34 @@ tasks/
    - 用 sudo 复制到目标位置：`sudo cp /tmp/file /target/path`
 3. 优点：避免 shell 转义、引号嵌套、特殊字符等问题
 
+### 2026-03-27 (跳板机 SSH 连接)
+
+**问题**: 目标服务器 172.31.31.11 无法直接访问，需要通过 192.168.17.35 跳转连接。
+
+**教训**:
+
+1. **跳板机连接模式**：
+   - 先 SSH 连接到跳板机
+   - 通过跳板机执行 `ssh` 命令跳转到目标服务器
+   - 命令格式：`ssh -o StrictHostKeyChecking=no -o TCPKeepAlive=yes -o UserKnownHostsFile=/dev/null -o Port='8122' '目标IP' '命令'`
+
+2. **跳板机配置示例**：
+   ```json
+   {
+     "host": "172.31.31.11",
+     "port": 8122,
+     "username": "root",
+     "jump_host": "192.168.17.35",
+     "jump_port": 22,
+     "jump_username": "root"
+   }
+   ```
+
+3. **优点**：
+   - 不需要修改 ssh2 库
+   - 利用跳板机的 SSH 工具实现跳转
+   - 支持各种 SSH 选项
+
 ### 2026-03-24 (1Panel Docker Compose 配置修改)
 
 **问题**: 需要修改 1Panel 管理的容器配置，但直接用 docker run 创建容器会导致 1Panel 无法管理。

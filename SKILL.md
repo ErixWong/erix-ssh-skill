@@ -401,6 +401,58 @@ Session-based SSH client with async execution and JSON file storage.
 6. disconnect → 断开连接
 ```
 
+## 跳板机 (Jump Host) 连接
+
+当目标服务器无法直接访问，需要通过中间服务器跳转时，可以使用跳板机配置。
+
+### 配置文件示例
+
+创建 `hosts/xxx.json`：
+
+```json
+{
+  "host": "目标服务器IP",
+  "port": 目标服务器端口,
+  "username": "目标服务器用户名",
+  "jump_host": "跳板机IP",
+  "jump_port": 跳板机端口,
+  "jump_username": "跳板机用户名"
+}
+```
+
+### 使用方式
+
+1. 先连接到跳板机：
+   ```bash
+   node ssh_client.js connect --config hosts/jump_host.json
+   ```
+
+2. 通过跳板机执行命令访问目标服务器：
+   ```bash
+   node ssh_client.js exec --session <session_id> --command "ssh -o StrictHostKeyChecking=no -o TCPKeepAlive=yes -o UserKnownHostsFile=/dev/null -o Port='8122' '目标服务器IP' '要执行的命令'"
+   ```
+
+### 示例：连接 172.31.31.11 (通过 192.168.17.35)
+
+**跳板机配置** (`hosts/172_31_31_11.json`)：
+```json
+{
+  "host": "172.31.31.11",
+  "port": 8122,
+  "username": "root",
+  "jump_host": "192.168.17.35",
+  "jump_port": 22,
+  "jump_username": "root"
+}
+```
+
+**连接步骤**：
+1. `node ssh_client.js connect --config hosts/host_35.json`
+2. 通过 192.168.17.35 跳转执行：
+   ```
+   node ssh_client.js exec --session <session_id> --command "ssh -q -o StrictHostKeyChecking=no -o TCPKeepAlive=yes -o UserKnownHostsFile=/dev/null -o Port='8122' '172.31.31.11' 'ls /ramdisk/tmp/webmail/'"
+   ```
+
 ## LLM 职责清单
 
 - [ ] **连接后立即保存 session_id** 到对话上下文或本地存储
