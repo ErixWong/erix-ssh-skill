@@ -113,7 +113,40 @@ async function setupConnection(sessionId, config) {
       port: config.port || 22,
       username: config.username,
       readyTimeout: 30000,
-      keepaliveInterval: 10000
+      keepaliveInterval: 10000,
+      // Add algorithms for compatibility with older SSH servers
+      algorithms: {
+        kex: [
+          'diffie-hellman-group-exchange-sha1',
+          'diffie-hellman-group14-sha1',
+          'diffie-hellman-group1-sha1',
+          'ecdh-sha2-nistp256',
+          'ecdh-sha2-nistp384',
+          'ecdh-sha2-nistp521'
+        ],
+        cipher: [
+          'aes128-ctr',
+          'aes192-ctr',
+          'aes256-ctr',
+          'aes128-cbc',
+          'aes192-cbc',
+          'aes256-cbc',
+          '3des-cbc'
+        ],
+        serverHostKey: [
+          'ssh-rsa',
+          'ssh-dss',
+          'ecdsa-sha2-nistp256',
+          'ecdsa-sha2-nistp384',
+          'ecdsa-sha2-nistp521'
+        ],
+        hmac: [
+          'hmac-sha1',
+          'hmac-sha2-256',
+          'hmac-sha2-512',
+          'hmac-sha1-96'
+        ]
+      }
     };
     
     if (config.password) {
