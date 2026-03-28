@@ -126,6 +126,68 @@
    - 修改配置后需要 `docker compose down && docker compose up -d` 生效
    - `.env` 文件中的变量会在 docker-compose.yml 中通过 `${VAR}` 引用
 
+### 2026-03-28 (远程文件编辑 - sed/yq)
+
+**问题**: 通过 SSH 编辑远程配置文件时，base64 方式适合创建完整文件，但对于小改动效率较低。
+
+**教训**:
+
+1. **AI 可用的远程编辑命令**：
+
+   | 命令 | 用途 | 示例 |
+   |------|------|------|
+   | `sed` | 替换/删除/插入 | `sed -i 's/old/new/' file` |
+   | `yq` | YAML 结构修改 | `yq e '.key="val"' -i file.yml` |
+   | `tee` | sudo 写文件 | `echo 'content' \| sudo tee file` |
+   | `base64` | 创建完整文件 | 避免转义问题，最可靠 |
+
+2. **sed 常用操作**：
+   ```bash
+   # 替换文本
+   sed -i 's/--parallel 1/--parallel 2/' docker-compose.yml
+   
+   # 删除行
+   sed -i '/^# comment/d' file.yml
+   
+   # 插入行（在匹配行后）
+   sed -i '/^services:/a "  new-service:"' file.yml
+   
+   # 修改特定行号
+   sed -i '5s/old/new/' file.yml
+   ```
+
+3. **yq 常用操作**（需安装 `yq` 工具）：
+   ```bash
+   # 修改 YAML 值
+   yq e '.services.app.command[2] = "131072"' -i docker-compose.yml
+   
+   # 添加新键
+   yq e '.services.app.environment += ["NEW_VAR=value"]' -i file.yml
+   
+   # 删除键
+   yq e 'del(.services.app.ports)' -i file.yml
+   ```
+
+4. **本地配置仓库方案**：
+   ```
+   /docker/stacks/
+   ├── llamacpp-nemotron-2/
+   │   └── docker-compose.yml    # 可直接用 sed/yq 编辑
+   ├── llamacpp-qwen35/
+   │   └── docker-compose.yml
+   └── ...
+   ```
+   
+   工作流程：
+   - 通过 SSH 用 `sed`/`yq` 修改配置文件
+   - 用 `docker compose up -d` 应用变更
+   - Portainer 可通过 Git 同步或 API 更新保持一致
+
+5. **注意事项**：
+   - `sed -i` 直接修改文件，无需临时文件
+   - 复杂 YAML 结构建议用 `yq`，避免 sed 破坏格式
+   - Windows 下用 PowerShell 计算 base64：`[Convert]::ToBase64String([IO.File]::ReadAllBytes('file'))`
+
 ---
 
 ✌Bazinga！
