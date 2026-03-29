@@ -244,7 +244,9 @@ function connectFromConfig(params) {
     username: config.username,
     password: config.password,
     private_key: config.private_key || config.privateKey,
-    passphrase: config.passphrase
+    passphrase: config.passphrase,
+    // Save defaultPty config for exec command
+    defaultPty: config.defaultPty || null
   };
   
   db.createSession(sessionId, connectionConfig);
@@ -329,6 +331,17 @@ function exec(params) {
   const session = db.getSession(sessionId);
   if (!session) return output({ success: false, error: 'Session not found' });
   
+  // Get default PTY config from session (set via config file)
+  const defaultPty = session.config?.defaultPty || {};
+  
+  // Priority: CLI params > config file defaults > hardcoded defaults
+  const ptyConfig = {
+    pty: params.pty !== undefined ? params.pty : (defaultPty.enabled || false),
+    cols: params.cols ? parseInt(params.cols) : (defaultPty.cols || 120),
+    rows: params.rows ? parseInt(params.rows) : (defaultPty.rows || 24),
+    term: params.term || defaultPty.term || 'xterm-256color'
+  };
+  
   const taskId = db.generateId('task');
   db.createTask(taskId, sessionId, params.command);
   
@@ -336,7 +349,11 @@ function exec(params) {
     action: 'exec',
     session_id: sessionId,
     task_id: taskId,
-    command: params.command
+    command: params.command,
+    pty: ptyConfig.pty,
+    cols: ptyConfig.cols,
+    rows: ptyConfig.rows,
+    term: ptyConfig.term
   });
   
   output({ success: true, task_id: taskId, message: 'Command submitted' });
@@ -789,6 +806,12 @@ function help() {
   console.log('  --passphrase PHRASE    Passphrase for private key');
   console.log('  --config FILE          Read connection config from file (JSON or key-value format)');
   console.log('');
+  console.log('Exec Options:');
+  console.log('  --pty                  Allocate a pseudo-terminal (for interactive programs)');
+  console.log('  --cols N               Terminal width in columns (default: 120)');
+  console.log('  --rows N               Terminal height in rows (default: 24)');
+  console.log('  --term TERM            Terminal type (default: xterm-256color)');
+  console.log('');
   console.log('Sudo Password Options (in order of priority):');
   console.log('  --password-file FILE   Read password from file');
   console.log('  SUDO_PASSWORD env      Set environment variable');
@@ -802,7 +825,13 @@ function help() {
   console.log('    "username": "admin",');
   console.log('    "password": "secret",');
   console.log('    "privateKey": "~/.ssh/id_rsa",');
-  console.log('    "passphrase": "key_passphrase"');
+  console.log('    "passphrase": "key_passphrase",');
+  console.log('    "defaultPty": {');
+  console.log('      "enabled": true,');
+  console.log('      "cols": 120,');
+  console.log('      "rows": 24,');
+  console.log('      "term": "xterm-256color"');
+  console.log('    }');
   console.log('  }');
   console.log('');
   console.log('Config File Format (Key-Value):');
@@ -816,6 +845,8 @@ function help() {
   console.log('  node ssh_client.js connect --host 192.168.1.100 --username admin');
   console.log('  node ssh_client.js connect --config ./hosts/server.json');
   console.log('  node ssh_client.js exec --session sess_xxx --command "df -h"');
+  console.log('  node ssh_client.js exec --session sess_xxx --command "screen -ls" --pty');
+  console.log('  node ssh_client.js exec --session sess_xxx --command "top -b -n 1"');
   console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update"');
   console.log('  SUDO_PASSWORD="secret" node ssh_client.js sudo --session sess_xxx --command "apt update"');
   console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');

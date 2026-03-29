@@ -207,13 +207,13 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
     content: command
   });
   
-  // Build exec options (PTY for sudo commands)
+  // Build exec options (PTY for interactive programs or sudo commands)
   const execOptions = {};
   if (options.pty || options.sudo) {
     execOptions.pty = {
-      cols: 120,
-      rows: 24,
-      term: 'xterm-256color'
+      cols: options.cols || 120,
+      rows: options.rows || 24,
+      term: options.term || 'xterm-256color'
     };
   }
   
@@ -520,7 +520,12 @@ async function processCommand(cmd) {
     }
     
     case 'exec': {
-      await executeCommand(cmd.session_id, cmd.task_id, cmd.command);
+      await executeCommand(cmd.session_id, cmd.task_id, cmd.command, {
+        pty: cmd.pty || false,
+        cols: cmd.cols || 120,
+        rows: cmd.rows || 24,
+        term: cmd.term || 'xterm-256color'
+      });
       break;
     }
     
