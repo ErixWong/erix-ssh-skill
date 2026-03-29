@@ -1,7 +1,7 @@
 ---
 name: ssh
-description: SSH remote server management toolkit with session support. Use when Claude needs to connect to remote servers via SSH, execute commands, manage files, or perform system administration tasks. Supports persistent sessions, async command execution, and message history with JSON file storage.
-argument-hint: "[connect|exec|sudo|history|output|disconnect] --session ID"
+description: SSH remote server management toolkit with session support. Use when Claude needs to connect to remote servers via SSH, execute commands, manage files, or perform system administration tasks. Supports persistent sessions, async command execution, SFTP file transfer, and message history with JSON file storage.
+argument-hint: "[connect|exec|sudo|sftp-list|sftp-download|sftp-upload|history|output|disconnect] --session ID"
 user-invocable: false
 allowed-tools: []
 ---
@@ -390,6 +390,208 @@ Session-based SSH client with async execution and JSON file storage.
 
 ---
 
+## SFTP 文件传输命令
+
+以下命令用于远程文件管理，使用相同的 session_id。
+
+### sftp-list
+
+列出远程目录内容。
+
+**参数：**
+- `session`: Session ID（必需）
+- `path`: 远程目录路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP list command submitted"
+}
+```
+
+**使用 output 获取结果：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "status": "completed",
+  "files": [
+    {
+      "name": "file.txt",
+      "size": 1024,
+      "mode": 33188,
+      "mtime": "2026-03-29T10:00:00Z",
+      "is_file": true,
+      "is_dir": false
+    }
+  ]
+}
+```
+
+---
+
+### sftp-download
+
+从远程服务器下载文件到本地。
+
+**参数：**
+- `session`: Session ID（必需）
+- `remote`: 远程文件路径（必需）
+- `local`: 本地保存路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP download command submitted"
+}
+```
+
+---
+
+### sftp-upload
+
+上传本地文件到远程服务器。
+
+**参数：**
+- `session`: Session ID（必需）
+- `local`: 本地文件路径（必需）
+- `remote`: 远程保存路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP upload command submitted"
+}
+```
+
+---
+
+### sftp-stat
+
+获取远程文件或目录的详细信息。
+
+**参数：**
+- `session`: Session ID（必需）
+- `path`: 远程路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "file_info": {
+    "path": "/home/user/file.txt",
+    "size": 1024,
+    "mode": 33188,
+    "mtime": "2026-03-29T10:00:00Z",
+    "is_file": true,
+    "is_dir": false,
+    "permissions": "644"
+  }
+}
+```
+
+---
+
+### sftp-mkdir
+
+创建远程目录。
+
+**参数：**
+- `session`: Session ID（必需）
+- `path`: 远程目录路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP mkdir command submitted"
+}
+```
+
+---
+
+### sftp-rmdir
+
+删除远程空目录。
+
+**参数：**
+- `session`: Session ID（必需）
+- `path`: 远程目录路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP rmdir command submitted"
+}
+```
+
+---
+
+### sftp-delete
+
+删除远程文件。
+
+**参数：**
+- `session`: Session ID（必需）
+- `path`: 远程文件路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP delete command submitted"
+}
+```
+
+---
+
+### sftp-rename
+
+重命名或移动远程文件。
+
+**参数：**
+- `session`: Session ID（必需）
+- `old-path`: 原路径（必需）
+- `new-path`: 新路径（必需）
+
+**script_path:** `scripts/ssh_client.js`
+
+**返回示例：**
+```json
+{
+  "success": true,
+  "task_id": "task_xxx",
+  "message": "SFTP rename command submitted"
+}
+```
+
+---
+
 ## 典型工作流程
 
 ```
@@ -398,7 +600,8 @@ Session-based SSH client with async execution and JSON file storage.
 3. exec/sudo → 执行命令，获取 task_id
 4. history → 查看命令执行状态
 5. output → 获取命令详细输出
-6. disconnect → 断开连接
+6. sftp-list/download/upload → 文件传输操作
+7. disconnect → 断开连接
 ```
 
 ## LLM 职责清单
@@ -422,6 +625,6 @@ Session-based SSH client with async execution and JSON file storage.
 
 ---
 
-*最后更新: 2026-03-12 - 按 skill-manager 标准格式重写*
+*最后更新: 2026-03-29 - 添加 SFTP 文件传输支持*
 
 ✌Bazinga！

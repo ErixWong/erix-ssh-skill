@@ -768,6 +768,217 @@ function list() {
   output({ success: true, count: sessions.length, sessions });
 }
 
+// ==================== SFTP Commands ====================
+
+/**
+ * SFTP List directory
+ */
+function sftpList(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.path) return output({ success: false, error: 'path is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-list ${params.path}`);
+  
+  sendCommand({
+    action: 'sftp_list',
+    session_id: sessionId,
+    task_id: taskId,
+    path: params.path
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP list command submitted' });
+}
+
+/**
+ * SFTP Download file
+ */
+function sftpDownload(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.remote) return output({ success: false, error: 'remote path is required (--remote)' });
+  if (!params.local) return output({ success: false, error: 'local path is required (--local)' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-download ${params.remote} -> ${params.local}`);
+  
+  sendCommand({
+    action: 'sftp_download',
+    session_id: sessionId,
+    task_id: taskId,
+    remote: params.remote,
+    local: params.local
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP download command submitted' });
+}
+
+/**
+ * SFTP Upload file
+ */
+function sftpUpload(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.local) return output({ success: false, error: 'local path is required (--local)' });
+  if (!params.remote) return output({ success: false, error: 'remote path is required (--remote)' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-upload ${params.local} -> ${params.remote}`);
+  
+  sendCommand({
+    action: 'sftp_upload',
+    session_id: sessionId,
+    task_id: taskId,
+    local: params.local,
+    remote: params.remote
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP upload command submitted' });
+}
+
+/**
+ * SFTP Stat (get file info)
+ */
+function sftpStat(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.path) return output({ success: false, error: 'path is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-stat ${params.path}`);
+  
+  sendCommand({
+    action: 'sftp_stat',
+    session_id: sessionId,
+    task_id: taskId,
+    path: params.path
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP stat command submitted' });
+}
+
+/**
+ * SFTP Mkdir (create directory)
+ */
+function sftpMkdir(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.path) return output({ success: false, error: 'path is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-mkdir ${params.path}`);
+  
+  sendCommand({
+    action: 'sftp_mkdir',
+    session_id: sessionId,
+    task_id: taskId,
+    path: params.path
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP mkdir command submitted' });
+}
+
+/**
+ * SFTP Rmdir (remove directory)
+ */
+function sftpRmdir(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.path) return output({ success: false, error: 'path is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-rmdir ${params.path}`);
+  
+  sendCommand({
+    action: 'sftp_rmdir',
+    session_id: sessionId,
+    task_id: taskId,
+    path: params.path
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP rmdir command submitted' });
+}
+
+/**
+ * SFTP Delete (remove file)
+ */
+function sftpDelete(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.path) return output({ success: false, error: 'path is required' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-delete ${params.path}`);
+  
+  sendCommand({
+    action: 'sftp_delete',
+    session_id: sessionId,
+    task_id: taskId,
+    path: params.path
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP delete command submitted' });
+}
+
+/**
+ * SFTP Rename (rename/move file)
+ */
+function sftpRename(params) {
+  const sessionId = params.session;
+  
+  if (!sessionId) return output({ success: false, error: 'session is required' });
+  if (!params.old_path && !params.old) return output({ success: false, error: 'old path is required (--old-path)' });
+  if (!params.new_path && !params.new) return output({ success: false, error: 'new path is required (--new-path)' });
+  
+  const session = db.getSession(sessionId);
+  if (!session) return output({ success: false, error: 'Session not found' });
+  
+  const oldPath = params.old_path || params.old;
+  const newPath = params.new_path || params.new;
+  
+  const taskId = db.generateId('task');
+  db.createTask(taskId, sessionId, `sftp-rename ${oldPath} -> ${newPath}`);
+  
+  sendCommand({
+    action: 'sftp_rename',
+    session_id: sessionId,
+    task_id: taskId,
+    old_path: oldPath,
+    new_path: newPath
+  });
+  
+  output({ success: true, task_id: taskId, message: 'SFTP rename command submitted' });
+}
+
 /**
  * Show help
  */
@@ -795,6 +1006,16 @@ function help() {
   console.log('  delete             Delete a session');
   console.log('  list               List all sessions');
   console.log('');
+  console.log('SFTP Commands:');
+  console.log('  sftp-list          List remote directory contents');
+  console.log('  sftp-download      Download file from remote server');
+  console.log('  sftp-upload        Upload file to remote server');
+  console.log('  sftp-stat          Get file/directory information');
+  console.log('  sftp-mkdir         Create remote directory');
+  console.log('  sftp-rmdir         Remove remote directory');
+  console.log('  sftp-delete        Delete remote file');
+  console.log('  sftp-rename        Rename/move remote file');
+  console.log('');
   console.log('Storage: ./data/sessions/ (JSON files)');
   console.log('');
   console.log('Connect Options:');
@@ -817,6 +1038,14 @@ function help() {
   console.log('  SUDO_PASSWORD env      Set environment variable');
   console.log('  (interactive)          Will prompt if TTY available');
   console.log('  (cached)               Use password from SSH connection (automatic)');
+  console.log('');
+  console.log('SFTP Options:');
+  console.log('  --session ID           Session ID (required for all SFTP commands)');
+  console.log('  --path PATH            Remote path (for list, stat, mkdir, rmdir, delete)');
+  console.log('  --remote PATH          Remote file path (for download/upload)');
+  console.log('  --local PATH           Local file path (for download/upload)');
+  console.log('  --old-path PATH        Old path (for rename)');
+  console.log('  --new-path PATH        New path (for rename)');
   console.log('');
   console.log('Config File Format (JSON):');
   console.log('  {');
@@ -852,6 +1081,15 @@ function help() {
   console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');
   console.log('  node ssh_client.js history --session sess_xxx');
   console.log('  node ssh_client.js output --task task_xxx');
+  console.log('');
+  console.log('SFTP Examples:');
+  console.log('  node ssh_client.js sftp-list --session sess_xxx --path /home/user');
+  console.log('  node ssh_client.js sftp-download --session sess_xxx --remote /etc/config.yml --local ./config.yml');
+  console.log('  node ssh_client.js sftp-upload --session sess_xxx --local ./app.js --remote /home/user/app.js');
+  console.log('  node ssh_client.js sftp-stat --session sess_xxx --path /home/user/file.txt');
+  console.log('  node ssh_client.js sftp-mkdir --session sess_xxx --path /home/user/newdir');
+  console.log('  node ssh_client.js sftp-delete --session sess_xxx --path /home/user/oldfile.txt');
+  console.log('  node ssh_client.js sftp-rename --session sess_xxx --old-path /home/user/old.txt --new-path /home/user/new.txt');
 }
 
 /**
@@ -886,6 +1124,15 @@ async function main() {
     case 'disconnect': disconnect(params); break;
     case 'delete': deleteSession(params); break;
     case 'list': list(); break;
+    // SFTP commands
+    case 'sftp-list': sftpList(params); break;
+    case 'sftp-download': sftpDownload(params); break;
+    case 'sftp-upload': sftpUpload(params); break;
+    case 'sftp-stat': sftpStat(params); break;
+    case 'sftp-mkdir': sftpMkdir(params); break;
+    case 'sftp-rmdir': sftpRmdir(params); break;
+    case 'sftp-delete': sftpDelete(params); break;
+    case 'sftp-rename': sftpRename(params); break;
     case 'help':
     case '--help': help(); break;
     default: output({ success: false, error: `Unknown command: ${command}` });
