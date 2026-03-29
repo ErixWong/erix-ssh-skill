@@ -91,8 +91,84 @@ node scripts/ssh_client.js connect --config ./hosts/server.json
 | `password` | No* | Password for authentication |
 | `privateKey` | No* | Path to private key file (supports `~` for home directory) |
 | `passphrase` | No | Passphrase for encrypted private key |
+| `defaultPty` | No | Default PTY config for exec commands (see below) |
 
 *Either `password` or `privateKey` is required for authentication.
+
+#### defaultPty Configuration
+
+The `defaultPty` field allows you to set default PTY options for all exec commands in this session:
+
+```json
+{
+  "host": "example.com",
+  "username": "admin",
+  "password": "secret",
+  "defaultPty": {
+    "enabled": true,
+    "cols": 120,
+    "rows": 24,
+    "term": "xterm-256color"
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Whether to allocate PTY by default |
+| `cols` | number | `120` | Terminal width in columns |
+| `rows` | number | `24` | Terminal height in rows |
+| `term` | string | `xterm-256color` | Terminal type |
+
+**Priority**: CLI params > Config file defaults > Hardcoded defaults
+
+```bash
+# If config has defaultPty.enabled = true, PTY is allocated by default
+node ssh_client.js exec --session sess_xxx --command "screen -ls"
+
+# CLI --pty overrides config default
+node ssh_client.js exec --session sess_xxx --command "ls"  # Uses config default
+node ssh_client.js exec --session sess_xxx --command "ls" --pty=false  # Override to disable
+```
+
+### PTY (Pseudo-Terminal) Support
+
+PTY is a **command-level** configuration, not a connection-level configuration. This is because different commands have different PTY requirements:
+
+| Command Type | PTY Required | Example |
+|--------------|--------------|---------|
+| Regular commands | No | `ls`, `cat`, `grep` |
+| Interactive programs | Yes | `screen`, `tmux`, `vim` |
+| System monitors | Yes | `top`, `htop` |
+| Sudo commands | Auto | Password hiding requires PTY |
+
+#### Usage
+
+```bash
+# Regular command - no PTY needed
+node scripts/ssh_client.js exec --session sess_xxx --command "ls -la"
+
+# Interactive program - requires PTY
+node scripts/ssh_client.js exec --session sess_xxx --command "screen -ls" --pty
+
+# Custom terminal size
+node scripts/ssh_client.js exec --session sess_xxx --command "htop" --pty --cols 200 --rows 50
+```
+
+#### PTY Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--pty` | Allocate a pseudo-terminal | `false` |
+| `--cols N` | Terminal width in columns | `120` |
+| `--rows N` | Terminal height in rows | `24` |
+| `--term TERM` | Terminal type | `xterm-256color` |
+
+#### Why PTY is Command-Level?
+
+1. **Different commands need different settings**: `ls` doesn't need PTY, but `screen` does
+2. **Same connection, different commands**: You may run both regular and interactive commands in the same session
+3. **Flexibility**: You can specify different terminal sizes for different commands
 
 ### Best Practices
 
@@ -285,8 +361,84 @@ node scripts/ssh_client.js connect --config ./hosts/server.json
 | `password` | 否* | 认证密码 |
 | `privateKey` | 否* | 私钥文件路径（支持 `~` 表示主目录） |
 | `passphrase` | 否 | 加密私钥的密码 |
+| `defaultPty` | 否 | 默认 PTY 配置（详见下文） |
 
 *`password` 或 `privateKey` 至少需要提供一个用于认证。
+
+#### defaultPty 配置
+
+`defaultPty` 字段允许为该会话的所有 exec 命令设置默认 PTY 选项：
+
+```json
+{
+  "host": "example.com",
+  "username": "admin",
+  "password": "secret",
+  "defaultPty": {
+    "enabled": true,
+    "cols": 120,
+    "rows": 24,
+    "term": "xterm-256color"
+  }
+}
+```
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enabled` | boolean | `false` | 是否默认分配 PTY |
+| `cols` | number | `120` | 终端宽度（列数） |
+| `rows` | number | `24` | 终端高度（行数） |
+| `term` | string | `xterm-256color` | 终端类型 |
+
+**优先级**：命令行参数 > 配置文件默认值 > 硬编码默认值
+
+```bash
+# 如果配置文件设置了 defaultPty.enabled = true，则默认分配 PTY
+node ssh_client.js exec --session sess_xxx --command "screen -ls"
+
+# 命令行 --pty 可以覆盖配置文件默认值
+node ssh_client.js exec --session sess_xxx --command "ls"  # 使用配置文件默认值
+node ssh_client.js exec --session sess_xxx --command "ls" --pty=false  # 覆盖为禁用
+```
+
+### PTY（伪终端）支持
+
+PTY 是**命令级别**的配置，不是连接级别的配置。这是因为不同的命令有不同的 PTY 需求：
+
+| 命令类型 | 需要 PTY | 示例 |
+|----------|----------|------|
+| 普通命令 | 否 | `ls`, `cat`, `grep` |
+| 交互式程序 | 是 | `screen`, `tmux`, `vim` |
+| 系统监控 | 是 | `top`, `htop` |
+| Sudo 命令 | 自动 | 密码隐藏需要 PTY |
+
+#### 使用方法
+
+```bash
+# 普通命令 - 不需要 PTY
+node scripts/ssh_client.js exec --session sess_xxx --command "ls -la"
+
+# 交互式程序 - 需要 PTY
+node scripts/ssh_client.js exec --session sess_xxx --command "screen -ls" --pty
+
+# 自定义终端大小
+node scripts/ssh_client.js exec --session sess_xxx --command "htop" --pty --cols 200 --rows 50
+```
+
+#### PTY 选项
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| `--pty` | 分配伪终端 | `false` |
+| `--cols N` | 终端宽度（列数） | `120` |
+| `--rows N` | 终端高度（行数） | `24` |
+| `--term TERM` | 终端类型 | `xterm-256color` |
+
+#### 为什么 PTY 是命令级别配置？
+
+1. **不同命令需要不同设置**：`ls` 不需要 PTY，但 `screen` 需要
+2. **同一连接执行不同命令**：同一会话中可能执行普通命令和交互式命令
+3. **灵活性**：可以为不同命令指定不同的终端大小
 
 ### 最佳实践
 
