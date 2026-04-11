@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-11
 **Branch**: `feature/log-output-storage`
-**Commit**: `b5dfe41`
+**Commit**: `b5dfe41` (initial), `5d4deb6` (audit), `pending` (fixes)
 **Auditor**: Kilo Code
 
 ---
@@ -63,44 +63,35 @@ const sixthBracket = line.indexOf(']', fifthBracket);
 
 ---
 
-**Issue #2: Content Contains Newlines (Medium)**
+**Issue #2: Content Contains Newlines (Medium)** ✅ **RESOLVED**
 
-Location: [`appendToLog()`](scripts/db-json.js:1047)
-
-```javascript
-const logLine = `[${timestamp}] [${taskId}] [${type}] ${content}\n`;
-```
+Location: [`appendToLog()`](scripts/db-json.js:1070)
 
 **Problem**: If `content` contains `\n` (newlines), each newline will create a separate log entry. When `readTaskLog()` reads the log, it splits by `\n` and treats each line as a separate entry.
 
-**Example**:
+**Solution Applied**: Added `escapeLogContent()` and `unescapeLogContent()` functions:
+
 ```javascript
-appendToLog(sessionId, taskId, 'STDOUT', 'Line 1\nLine 2\nLine 3');
+// Escape newlines before writing
+function escapeLogContent(content) {
+  return content
+    .replace(/\r\n/g, '\\r\\n')  // Windows line endings
+    .replace(/\n/g, '\\n')       // Unix line endings
+    .replace(/\r/g, '\\r');      // Old Mac line endings
+}
+
+// Unescape when reading
+function unescapeLogContent(content) {
+  return content
+    .replace(/\\r\\n/g, '\r\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r');
+}
 ```
 
-Results in log file:
-```
-[timestamp] [taskId] [STDOUT] Line 1
-Line 2
-Line 3
-```
-
-When `readTaskLog()` parses this:
-- Entry 1: `[timestamp] [taskId] [STDOUT] Line 1` ✅ parsed correctly
-- Entry 2: `Line 2` ❌ doesn't match pattern, silently ignored
-- Entry 3: `Line 3` ❌ doesn't match pattern, silently ignored
-
-**Impact**: Multi-line output is lost during parsing.
-
-**Recommendation**: Escape newlines before writing:
-```javascript
-// Option A: Replace newlines with escaped version
-const escapedContent = content.replace(/\n/g, '\\n');
-const logLine = `[${timestamp}] [${taskId}] [${type}] ${escapedContent}\n`;
-
-// Option B: Use a delimiter that's unlikely in output (e.g., null byte)
-const logLine = `[${timestamp}] [${taskId}] [${type}] ${content}\0\n`;
-```
+Now multi-line output is preserved correctly:
+- Writing: `Line 1\nLine 2` → stored as `Line 1\\nLine 2`
+- Reading: `Line 1\\nLine 2` → restored to `Line 1\nLine 2`
 
 ---
 
@@ -448,9 +439,9 @@ describe('Command Execution with Logs', () => {
 
 ### High Priority (Address Before Merge)
 
-| # | Issue | Recommendation |
-|---|-------|----------------|
-| 2 | Newlines in content | Escape newlines before writing to log |
+| # | Issue | Status | Recommendation |
+|---|-------|--------|----------------|
+| 2 | Newlines in content | ✅ **RESOLVED** | Added `escapeLogContent()` and `unescapeLogContent()` functions |
 
 ### Medium Priority (Address Soon)
 
@@ -482,14 +473,19 @@ The log output storage feature is a solid implementation that solves the JSON co
 - Good documentation
 - Backward compatible
 - Password masking for security
+- Newline escaping for multi-line output support
 
-**Areas for Improvement**:
-- Newline handling in log content
+**Issues Resolved**:
+- ✅ Issue #2: Newline handling in log content (fixed with escape/unescape functions)
+
+**Remaining Improvements** (can be addressed in follow-up PRs):
 - Error checking in caller
 - Performance optimization for streaming updates
+- Bracket parsing robustness
 
-**Recommendation**: ✅ **Approve for merge** after addressing the newline handling issue (Issue #2). Other improvements can be addressed in follow-up PRs.
+**Recommendation**: ✅ **Approved for merge** - High priority issue resolved.
 
 ---
 
 *Audit completed: 2026-04-11*
+*Issue #2 fix applied: 2026-04-11*

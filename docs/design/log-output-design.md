@@ -35,20 +35,23 @@ Each log entry is a single line with structured format:
 [timestamp] [task_id] [type] content
 ```
 
+**Important**: Content is escaped to ensure single-line format. Newlines in output are replaced with `\n` (literal backslash-n) before writing, and restored when reading.
+
 Types:
 - `COMMAND` - The command being executed
-- `STDOUT` - Standard output chunk
-- `STDERR` - Standard error chunk
+- `STDOUT` - Standard output chunk (newlines escaped)
+- `STDERR` - Standard error chunk (newlines escaped)
 - `EXIT` - Exit code
 - `SYSTEM` - System messages (e.g., password prompt detected)
 
-Example:
+Example (raw log file):
 ```
 [2026-04-11T10:22:48Z] [task_abc123] [COMMAND] df -h
-[2026-04-11T10:22:49Z] [task_abc123] [STDOUT] Filesystem      Size  Used Avail Use% Mounted on
-[2026-04-11T10:22:49Z] [task_abc123] [STDOUT] /dev/sda1       100G   50G   50G  50% /
+[2026-04-11T10:22:49Z] [task_abc123] [STDOUT] Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1       100G   50G   50G  50% /
 [2026-04-11T10:22:50Z] [task_abc123] [EXIT] 0
 ```
+
+When read back, the `\n` is converted back to actual newline, restoring the original multi-line output.
 
 ### Task Structure Changes
 

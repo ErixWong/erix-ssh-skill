@@ -1022,14 +1022,50 @@ function rotateLogIfNeeded(sessionId) {
 }
 
 /**
+ * Escape content for log file storage
+ * Newlines are escaped to ensure each log entry is a single line
+ *
+ * @param {string} content - Raw content
+ * @returns {string} Escaped content safe for single-line log format
+ */
+function escapeLogContent(content) {
+  if (!content) return '';
+  // Escape newlines: \n -> \\n, \r -> \\r
+  // This ensures each log entry is a single line for reliable parsing
+  return content
+    .replace(/\r\n/g, '\\r\\n')  // Windows line endings
+    .replace(/\n/g, '\\n')       // Unix line endings
+    .replace(/\r/g, '\\r');      // Old Mac line endings
+}
+
+/**
+ * Unescape content read from log file
+ * Restore original newlines from escaped format
+ *
+ * @param {string} content - Escaped content from log
+ * @returns {string} Original content with newlines restored
+ */
+function unescapeLogContent(content) {
+  if (!content) return '';
+  // Unescape newlines: \\n -> \n, \\r -> \r
+  return content
+    .replace(/\\r\\n/g, '\r\n')  // Windows line endings
+    .replace(/\\n/g, '\n')       // Unix line endings
+    .replace(/\\r/g, '\r');      // Old Mac line endings
+}
+
+/**
  * Append output to log file
  * Format: [timestamp] [task_id] [type] content
- * 
+ *
+ * Content is escaped to ensure each log entry is a single line.
+ * This prevents multi-line output from breaking log parsing.
+ *
  * @param {string} sessionId - Session ID
  * @param {string} taskId - Task ID
- * @param {string} type - Output type: COMMAND, STDOUT, STDERR, EXIT
- * @param {string} content - Output content (can contain any characters, including binary)
- * @returns {object} { log_num, log_offset, bytes_written }
+ * @param {string} type - Output type: COMMAND, STDOUT, STDERR, EXIT, SYSTEM
+ * @param {string} content - Output content (can contain any characters, including newlines)
+ * @returns {object} { log_num, log_offset, bytes_written, error? }
  */
 function appendToLog(sessionId, taskId, type, content) {
   ensureDirectories();
@@ -1042,9 +1078,9 @@ function appendToLog(sessionId, taskId, type, content) {
   
   // Format log entry
   const timestamp = new Date().toISOString();
-  // Escape newlines in content for single-line format, but preserve content integrity
-  // Use a delimiter that's unlikely to appear in output
-  const logLine = `[${timestamp}] [${taskId}] [${type}] ${content}\n`;
+  // Escape newlines to ensure single-line format for reliable parsing
+  const escapedContent = escapeLogContent(content);
+  const logLine = `[${timestamp}] [${taskId}] [${type}] ${escapedContent}\n`;
   
   try {
     // Append to log file (using appendFileSync for atomic writes)
@@ -1123,12 +1159,15 @@ function readTaskLog(sessionId, taskId, options = {}) {
           const data = match[2];
           
           if (includeTypes.includes(type)) {
+            // Unescape content to restore original newlines
+            const unescapedData = unescapeLogContent(data);
+            
             if (type === 'STDOUT') {
-              stdout.push(data);
+              stdout.push(unescapedData);
             } else if (type === 'STDERR') {
-              stderr.push(data);
+              stderr.push(unescapedData);
             } else if (type === 'EXIT') {
-              exitCode = parseInt(data) || data;
+              exitCode = parseInt(data) || data;  // EXIT code doesn't need unescaping
             }
           }
         }
@@ -1184,13 +1223,13 @@ function searchLogs(sessionId, query, options = {}) {
           // Filter by task_id if specified
           if (taskId && entryTaskId !== taskId) continue;
           
-          // Search in data
+          // Search in data (search in escaped format, but return unescaped)
           if (data.toLowerCase().includes(queryLower)) {
             results.push({
               timestamp,
               task_id: entryTaskId,
               type,
-              content: data,
+              content: unescapeLogContent(data),  // Return unescaped content
               log_num: num
             });
             
@@ -1291,6 +1330,8 @@ module.exports = {
   getLogFilePath,
   getCurrentLogNum,
   LOG_CONFIG,
+  escapeLogContent,
+  unescapeLogContent,
   
   // Database
   close
