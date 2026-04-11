@@ -195,6 +195,8 @@ async function setupConnection(sessionId, config) {
 
 /**
  * Execute command on session
+ * Output is written to log files (safe for binary/special characters)
+ * JSON only stores task metadata (status, exit_code, log_num, log_offset)
  */
 async function executeCommand(sessionId, taskId, command, options = {}) {
   const conn = connections.get(sessionId);
@@ -205,6 +207,10 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
     task.output = 'Not connected';
     db.updateTask(task);
     
+    // Write error to log file
+    db.appendToLog(sessionId, taskId, 'STDERR', 'Not connected');
+    db.appendToLog(sessionId, taskId, 'EXIT', '1');
+    
     db.addMessage(sessionId, {
       type: 'error',
       task_id: taskId,
@@ -214,6 +220,14 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
   }
   
   task.status = 'running';
+  db.updateTask(task);
+  
+  // Write command to log file
+  const logInfo = db.appendToLog(sessionId, taskId, 'COMMAND', command);
+  
+  // Store log reference in task (for quick lookup)
+  task.log_num = logInfo.log_num;
+  task.log_offset = logInfo.log_offset;
   db.updateTask(task);
   
   db.addMessage(sessionId, {
@@ -238,6 +252,10 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
       task.output = err.message;
       db.updateTask(task);
       
+      // Write error to log file
+      db.appendToLog(sessionId, taskId, 'STDERR', err.message);
+      db.appendToLog(sessionId, taskId, 'EXIT', '1');
+      
       db.addMessage(sessionId, {
         type: 'error',
         task_id: taskId,
@@ -253,15 +271,18 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
       const chunk = data.toString();
       stdout += chunk;
       
-      // Update task with partial output
-      task.output = stdout;
+      // Write output to log file (safe for any characters)
+      db.appendToLog(sessionId, taskId, 'STDOUT', chunk);
+      
+      // Update task status only (no output in JSON to prevent corruption)
+      task.status = 'running';
       db.updateTask(task);
       
-      // Add output message
+      // Add output message (for real-time monitoring, but content is truncated)
       db.addMessage(sessionId, {
         type: 'output',
         task_id: taskId,
-        content: chunk,
+        content: chunk.length > 200 ? chunk.substring(0, 200) + '...' : chunk,
         stream: 'stdout'
       });
     });
@@ -269,23 +290,37 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
     stream.stderr.on('data', (data) => {
       const chunk = data.toString();
       stderr += chunk;
-      task.stderr = stderr;
+      
+      // Write stderr to log file
+      db.appendToLog(sessionId, taskId, 'STDERR', chunk);
+      
+      // Update task status only
+      task.status = 'running';
       db.updateTask(task);
       
+      // Add error message (truncated for JSON safety)
       db.addMessage(sessionId, {
         type: 'output',
         task_id: taskId,
-        content: chunk,
+        content: chunk.length > 200 ? chunk.substring(0, 200) + '...' : chunk,
         stream: 'stderr'
       });
     });
     
     stream.on('close', (code, signal) => {
       task.status = 'completed';
-      task.output = stdout;
-      task.stderr = stderr;
       task.exit_code = code;
       task.completed_at = new Date().toISOString();
+      
+      // Write exit code to log file
+      db.appendToLog(sessionId, taskId, 'EXIT', String(code || 0));
+      
+      // Store output summary in task (truncated for JSON safety)
+      task.output = stdout.length > 500 ? stdout.substring(0, 500) + '...' : stdout;
+      task.stderr = stderr.length > 200 ? stderr.substring(0, 200) + '...' : stderr;
+      task.output_length = stdout.length;  // Store full length for reference
+      task.stderr_length = stderr.length;
+      
       db.updateTask(task);
       
       db.addMessage(sessionId, {
@@ -299,6 +334,8 @@ async function executeCommand(sessionId, taskId, command, options = {}) {
 
 /**
  * Execute sudo command with password
+ * Output is written to log files (safe for binary/special characters)
+ * Password is masked in log output for security
  */
 async function executeSudoCommand(sessionId, taskId, command, password) {
   const conn = connections.get(sessionId);
@@ -309,6 +346,10 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
     task.output = 'Not connected';
     db.updateTask(task);
     
+    // Write error to log file
+    db.appendToLog(sessionId, taskId, 'STDERR', 'Not connected');
+    db.appendToLog(sessionId, taskId, 'EXIT', '1');
+    
     db.addMessage(sessionId, {
       type: 'error',
       task_id: taskId,
@@ -318,6 +359,14 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
   }
   
   task.status = 'running';
+  db.updateTask(task);
+  
+  // Write command to log file (mask password in sudo command)
+  const logInfo = db.appendToLog(sessionId, taskId, 'COMMAND', `sudo ${command}`);
+  
+  // Store log reference in task
+  task.log_num = logInfo.log_num;
+  task.log_offset = logInfo.log_offset;
   db.updateTask(task);
   
   db.addMessage(sessionId, {
@@ -339,6 +388,10 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
       task.status = 'error';
       task.output = err.message;
       db.updateTask(task);
+      
+      // Write error to log file
+      db.appendToLog(sessionId, taskId, 'STDERR', err.message);
+      db.appendToLog(sessionId, taskId, 'EXIT', '1');
       
       db.addMessage(sessionId, {
         type: 'error',
@@ -368,7 +421,7 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
       const chunk = data.toString();
       stdout += chunk;
       
-      // Check for password prompt (fixed: && instead of ||)
+      // Check for password prompt
       if (!passwordSent && passwordAttempts < maxPasswordAttempts) {
         const isPasswordPrompt = passwordPromptPatterns.some(pattern => pattern.test(chunk));
         
@@ -384,23 +437,29 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
             content: '[sudo] Password prompt detected, sending password...'
           });
           
-          // Clear password from the output to avoid logging it (fixed: escape special chars)
+          // Write to log (mask password prompt)
+          db.appendToLog(sessionId, taskId, 'SYSTEM', '[sudo] Password prompt detected');
+          
+          // Clear password from the output to avoid logging it
           stdout = stdout.replace(new RegExp(`^${escapeRegExp(password)}$`, 'gm'), '********');
         }
       }
       
-      // Update task with partial output
-      task.output = stdout;
-      db.updateTask(task);
-      
       // Sanitize output before storing (mask password if present)
       const sanitizedChunk = chunk.replace(new RegExp(escapeRegExp(password), 'g'), '********');
       
-      // Add output message
+      // Write sanitized output to log file
+      db.appendToLog(sessionId, taskId, 'STDOUT', sanitizedChunk);
+      
+      // Update task status only (no full output in JSON)
+      task.status = 'running';
+      db.updateTask(task);
+      
+      // Add output message (truncated for JSON safety)
       db.addMessage(sessionId, {
         type: 'output',
         task_id: taskId,
-        content: sanitizedChunk,
+        content: sanitizedChunk.length > 200 ? sanitizedChunk.substring(0, 200) + '...' : sanitizedChunk,
         stream: 'stdout'
       });
     });
@@ -408,23 +467,37 @@ async function executeSudoCommand(sessionId, taskId, command, password) {
     stream.stderr.on('data', (data) => {
       const chunk = data.toString();
       stderr += chunk;
-      task.stderr = stderr;
+      
+      // Write stderr to log file
+      db.appendToLog(sessionId, taskId, 'STDERR', chunk);
+      
+      // Update task status only
+      task.status = 'running';
       db.updateTask(task);
       
+      // Add error message (truncated for JSON safety)
       db.addMessage(sessionId, {
         type: 'output',
         task_id: taskId,
-        content: chunk,
+        content: chunk.length > 200 ? chunk.substring(0, 200) + '...' : chunk,
         stream: 'stderr'
       });
     });
     
     stream.on('close', (code, signal) => {
       task.status = 'completed';
-      task.output = stdout;
-      task.stderr = stderr;
       task.exit_code = code;
       task.completed_at = new Date().toISOString();
+      
+      // Write exit code to log file
+      db.appendToLog(sessionId, taskId, 'EXIT', String(code || 0));
+      
+      // Store output summary in task (truncated for JSON safety)
+      task.output = stdout.length > 500 ? stdout.substring(0, 500) + '...' : stdout;
+      task.stderr = stderr.length > 200 ? stderr.substring(0, 200) + '...' : stderr;
+      task.output_length = stdout.length;
+      task.stderr_length = stderr.length;
+      
       db.updateTask(task);
       
       db.addMessage(sessionId, {
