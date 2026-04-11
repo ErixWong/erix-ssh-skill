@@ -614,9 +614,28 @@ Session-based SSH client with async execution and JSON file storage.
 ## 存储位置
 
 - 会话索引: `./data/sessions.json`
-- 会话数据: `./data/sessions/sess_xxx.json`
+- 会话数据: `./data/sessions/sess_xxx.json` (连接信息、任务元数据)
+- 命令输出日志: `./data/sessions/sess_xxx.log` (完整输出，安全存储)
+- 日志轮转: `./data/sessions/sess_xxx.1.log`, `sess_xxx.2.log` 等
 - PID 文件: `./data/manager.pid`
 - 命令目录: `./data/commands/`
+
+### 日志文件格式
+
+命令输出使用日志文件存储，避免 JSON 文件损坏：
+
+```
+[2026-04-11T10:22:48Z] [task_xxx] [COMMAND] df -h
+[2026-04-11T10:22:49Z] [task_xxx] [STDOUT] Filesystem      Size  Used Avail Use% Mounted on
+[2026-04-11T10:22:49Z] [task_xxx] [STDERR] (empty or error)
+[2026-04-11T10:22:50Z] [task_xxx] [EXIT] 0
+```
+
+**优点：**
+- 日志文件是 append-only，不会因特殊字符损坏
+- JSON 文件只存储元数据，保持稳定
+- 支持大输出（日志文件自动轮转）
+- 可用标准工具查看 (`tail`, `grep`)
 
 ## 系统要求
 
@@ -625,6 +644,6 @@ Session-based SSH client with async execution and JSON file storage.
 
 ---
 
-*最后更新: 2026-03-29 - 添加 SFTP 文件传输支持*
+*最后更新: 2026-04-11 - 命令输出改用日志文件存储，防止 JSON 文件损坏*
 
 ✌Bazinga！

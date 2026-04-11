@@ -188,6 +188,59 @@
    - 复杂 YAML 结构建议用 `yq`，避免 sed 破坏格式
    - Windows 下用 PowerShell 计算 base64：`[Convert]::ToBase64String([IO.File]::ReadAllBytes('file'))`
 
+### 2026-04-03 (Windows timeout 命令限制)
+
+**问题**: 在 Windows cmd.exe 中使用 `timeout /t 2 > nul` 时报错 "ERROR: Input redirection is not supported, exiting the process immediately."。
+
+**原因**: Windows 的 `timeout` 命令**不支持任何输入/输出重定向** (`>` 或 `<`)，检测到重定向符号就会报错退出。
+
+**教训**:
+
+1. **Windows 延迟命令替代方案**：
+   ```cmd
+   :: 方法1: PowerShell (推荐)
+   powershell -Command "Start-Sleep -Seconds 2"
+   
+   :: 方法2: 使用 ping 模拟延迟
+   ping -n 3 127.0.0.1 > nul
+   
+   :: 方法3: 直接用 cmd /c 执行
+   cmd /c "command"
+   ```
+
+2. **注意事项**：
+   - `timeout` 命令设计用于交互式场景，不支持脚本中的重定向
+   - 在批处理脚本中需要延迟时，优先使用 PowerShell 或 ping 方法
+
+### 2026-04-11 (命令输出导致 JSON 文件损坏)
+
+**问题**: 命令输出包含特殊字符（二进制数据、ANSI 码、控制字符）时，直接存储到 JSON 文件的 `task.output` 字段会导致 JSON 文件损坏。
+
+**原因**: JSON.stringify 无法处理某些特殊字符，导致文件损坏无法读取。
+
+**教训**:
+
+1. **分离存储策略**：
+   - JSON 文件： 存储连接信息、任务元数据（状态、exit_code）
+   - 日志文件: 存储完整命令输出（append-only，安全）
+
+2. **日志文件格式**：
+   ```
+   [timestamp] [task_id] [type] content
+   ```
+   类型: COMMAND, STDOUT, STDERR, EXIT
+
+3. **优点**：
+   - JSON 文件不会损坏
+   - 完整输出保留
+   - 可用标准工具查看 (`tail`, `grep`)
+   - 自动轮转（1MB）
+
+4. **实现文件**：
+   - `scripts/db-json.js`: 添加 `appendToLog()`, `readTaskLog()`, `searchLogs()`
+   - `scripts/session_manager.js`: 输出写入日志文件
+   - `docs/design/log-output-design.md`: 设计文档
+
 ---
 
 ✌Bazinga！

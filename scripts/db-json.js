@@ -8,8 +8,10 @@
  * data/
  * ├── sessions.json           # Session index
  * └── sessions/
- *     ├── sess_xxx.json       # Main file (recent 50 command rounds, self-cycling)
- *     ├── sess_xxx.1.json     # Archive #1 (~100KB, full)
+ *     ├── sess_xxx.json       # Main file (connection info, task metadata, no output)
+ *     ├── sess_xxx.log        # Command output log (append-only)
+ *     ├── sess_xxx.1.log      # Rotated log #1 (when log > maxLogSize)
+ *     ├── sess_xxx.1.json     # Archive #1 (~100KB, full) - legacy messages
  *     ├── sess_xxx.2.json     # Archive #2 (~100KB, full)
  *     └── sess_xxx.3.json     # Archive #3 (current, being written)
  *
@@ -17,6 +19,12 @@
  * - Every write to main file also appends to archive file
  * - Main file self-cycles: keeps last 50 command rounds
  * - Archive file: appends all messages, creates new file when > 100KB
+ *
+ * Log strategy (NEW):
+ * - Command output is written to .log files (append-only, safe for binary data)
+ * - JSON files only store task metadata (status, exit_code, log_offset)
+ * - Log files rotate when exceeding maxLogSize
+ * - This prevents JSON corruption from command output containing special characters
  */
 
 const path = require('path');
@@ -31,6 +39,12 @@ const SESSIONS_INDEX_PATH = path.join(DATA_DIR, 'sessions.json');
 const ARCHIVE_CONFIG = {
   keepRecentCommands: 50,        // Keep this many recent command rounds in main file
   archiveMaxSize: 100 * 1024     // Max archive file size: 100KB
+};
+
+// Log configuration (NEW)
+const LOG_CONFIG = {
+  maxLogSize: 1024 * 1024,       // Max log file size: 1MB
+  keepRotatedLogs: 5             // Keep this many rotated log files
 };
 
 // Ensure directories exist
@@ -247,7 +261,7 @@ function listSessions() {
 }
 
 /**
- * Delete session and its data (including all archives)
+ * Delete session and its data (including all archives and logs)
  */
 function deleteSession(sessionId) {
   // Remove main data file
@@ -256,11 +270,13 @@ function deleteSession(sessionId) {
     fs.unlinkSync(filePath);
   }
   
-  // Remove all archive files using readdir (handles gaps in numbering)
+  // Remove all archive and log files using readdir (handles gaps in numbering)
   const files = fs.readdirSync(SESSIONS_DIR);
   const archivePattern = new RegExp(`^${sessionId}\\.(\\d+)\\.json$`);
+  const logPattern = new RegExp(`^${sessionId}(?:\\.(\\d+))?\\.log$`);
+  
   for (const file of files) {
-    if (archivePattern.test(file)) {
+    if (archivePattern.test(file) || logPattern.test(file)) {
       fs.unlinkSync(path.join(SESSIONS_DIR, file));
     }
   }
@@ -381,11 +397,38 @@ function listTasks(sessionId) {
 
 /**
  * Get task output
+ * If task has log_num, read full output from log file
+ * Otherwise, return truncated output from JSON (legacy compatibility)
  */
 function getTaskOutput(taskId) {
   const task = getTask(taskId);
   if (!task) return null;
   
+  // If task has log reference, read full output from log file
+  if (task.log_num !== undefined) {
+    const logOutput = readTaskLog(task.session_id, taskId, {
+      logNum: task.log_num,
+      logOffset: task.log_offset
+    });
+    
+    return {
+      task_id: task.id,
+      session_id: task.session_id,
+      command: task.command,
+      status: task.status,
+      exit_code: task.exit_code,
+      created_at: task.created_at,
+      completed_at: task.completed_at || task.updated_at,
+      output: logOutput.stdout,
+      stderr: logOutput.stderr,
+      output_length: task.output_length || logOutput.stdout.length,
+      stderr_length: task.stderr_length || logOutput.stderr.length,
+      log_num: task.log_num,
+      log_offset: task.log_offset
+    };
+  }
+  
+  // Legacy: return output from JSON (truncated)
   return {
     task_id: task.id,
     session_id: task.session_id,
@@ -395,7 +438,9 @@ function getTaskOutput(taskId) {
     created_at: task.created_at,
     completed_at: task.completed_at || task.updated_at,
     output: task.output || '',
-    stderr: task.stderr || ''
+    stderr: task.stderr || '',
+    output_length: task.output_length || (task.output ? task.output.length : 0),
+    stderr_length: task.stderr_length || (task.stderr ? task.stderr.length : 0)
   };
 }
 
@@ -920,6 +965,318 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// ============================================
+// Log File Operations (NEW)
+// ============================================
+
+/**
+ * Get log file path
+ */
+function getLogFilePath(sessionId, logNum = 0) {
+  if (logNum === 0) {
+    return path.join(SESSIONS_DIR, `${sessionId}.log`);
+  }
+  return path.join(SESSIONS_DIR, `${sessionId}.${logNum}.log`);
+}
+
+/**
+ * Get current log number (find the latest log file)
+ */
+function getCurrentLogNum(sessionId) {
+  let num = 0;
+  while (fs.existsSync(getLogFilePath(sessionId, num))) {
+    num++;
+  }
+  return num > 0 ? num - 1 : 0;
+}
+
+/**
+ * Rotate log file if it exceeds max size
+ * @returns {number} The current log number to write to
+ */
+function rotateLogIfNeeded(sessionId) {
+  let logNum = getCurrentLogNum(sessionId);
+  let logPath = getLogFilePath(sessionId, logNum);
+  
+  // Check if current log is full, rotate it
+  if (fs.existsSync(logPath) && getFileSize(logPath) > LOG_CONFIG.maxLogSize) {
+    // Increment log number
+    logNum++;
+    logPath = getLogFilePath(sessionId, logNum);
+    
+    // Clean up old logs if we exceed the limit
+    const oldestLogNum = logNum - LOG_CONFIG.keepRotatedLogs;
+    if (oldestLogNum > 0) {
+      const oldLogPath = getLogFilePath(sessionId, oldestLogNum);
+      if (fs.existsSync(oldLogPath)) {
+        try {
+          fs.unlinkSync(oldLogPath);
+        } catch (err) {
+          console.error(`Failed to delete old log ${oldLogPath}: ${err.message}`);
+        }
+      }
+    }
+  }
+  
+  return logNum;
+}
+
+/**
+ * Escape content for log file storage
+ * Newlines are escaped to ensure each log entry is a single line
+ *
+ * @param {string} content - Raw content
+ * @returns {string} Escaped content safe for single-line log format
+ */
+function escapeLogContent(content) {
+  if (!content) return '';
+  // Escape newlines: \n -> \\n, \r -> \\r
+  // This ensures each log entry is a single line for reliable parsing
+  return content
+    .replace(/\r\n/g, '\\r\\n')  // Windows line endings
+    .replace(/\n/g, '\\n')       // Unix line endings
+    .replace(/\r/g, '\\r');      // Old Mac line endings
+}
+
+/**
+ * Unescape content read from log file
+ * Restore original newlines from escaped format
+ *
+ * @param {string} content - Escaped content from log
+ * @returns {string} Original content with newlines restored
+ */
+function unescapeLogContent(content) {
+  if (!content) return '';
+  // Unescape newlines: \\n -> \n, \\r -> \r
+  return content
+    .replace(/\\r\\n/g, '\r\n')  // Windows line endings
+    .replace(/\\n/g, '\n')       // Unix line endings
+    .replace(/\\r/g, '\r');      // Old Mac line endings
+}
+
+/**
+ * Append output to log file
+ * Format: [timestamp] [task_id] [type] content
+ *
+ * Content is escaped to ensure each log entry is a single line.
+ * This prevents multi-line output from breaking log parsing.
+ *
+ * @param {string} sessionId - Session ID
+ * @param {string} taskId - Task ID
+ * @param {string} type - Output type: COMMAND, STDOUT, STDERR, EXIT, SYSTEM
+ * @param {string} content - Output content (can contain any characters, including newlines)
+ * @returns {object} { log_num, log_offset, bytes_written, error? }
+ */
+function appendToLog(sessionId, taskId, type, content) {
+  ensureDirectories();
+  
+  const logNum = rotateLogIfNeeded(sessionId);
+  const logPath = getLogFilePath(sessionId, logNum);
+  
+  // Get current file size for offset
+  const logOffset = getFileSize(logPath);
+  
+  // Format log entry
+  const timestamp = new Date().toISOString();
+  // Escape newlines to ensure single-line format for reliable parsing
+  const escapedContent = escapeLogContent(content);
+  const logLine = `[${timestamp}] [${taskId}] [${type}] ${escapedContent}\n`;
+  
+  try {
+    // Append to log file (using appendFileSync for atomic writes)
+    fs.appendFileSync(logPath, logLine, 'utf8');
+    
+    return {
+      log_num: logNum,
+      log_offset: logOffset,
+      bytes_written: Buffer.byteLength(logLine, 'utf8')
+    };
+  } catch (err) {
+    console.error(`Failed to append to log ${logPath}: ${err.message}`);
+    return {
+      log_num: logNum,
+      log_offset: -1,
+      bytes_written: 0,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Read log content for a specific task
+ * 
+ * @param {string} sessionId - Session ID
+ * @param {string} taskId - Task ID
+ * @param {object} options - { log_num, log_offset, include_types }
+ * @returns {object} { stdout, stderr, exit_code }
+ */
+function readTaskLog(sessionId, taskId, options = {}) {
+  const { logNum = null, logOffset = null, includeTypes = ['STDOUT', 'STDERR', 'EXIT'] } = options;
+  
+  const stdout = [];
+  const stderr = [];
+  let exitCode = null;
+  
+  // Determine which log files to read
+  const logFiles = [];
+  if (logNum !== null) {
+    // Read specific log file
+    const logPath = getLogFilePath(sessionId, logNum);
+    if (fs.existsSync(logPath)) {
+      logFiles.push({ num: logNum, path: logPath });
+    }
+  } else {
+    // Read all log files
+    const currentLogNum = getCurrentLogNum(sessionId);
+    for (let num = 0; num <= currentLogNum; num++) {
+      const logPath = getLogFilePath(sessionId, num);
+      if (fs.existsSync(logPath)) {
+        logFiles.push({ num, path: logPath });
+      }
+    }
+  }
+  
+  // Parse log entries
+  const taskPattern = new RegExp(`^\\[[^\\]]+\\] \\[${taskId}\\] \\[([^\\]]+)\\] (.*)$`);
+  
+  for (const logFile of logFiles) {
+    try {
+      const content = fs.readFileSync(logFile.path, 'utf8');
+      const lines = content.split('\n');
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        // Skip if offset is specified and we're before it
+        if (logOffset !== null && logFile.num === logNum) {
+          // Rough offset check - skip lines until we're past the offset
+          // This is approximate; for exact offset we'd need byte counting
+        }
+        
+        const match = line.match(taskPattern);
+        if (match) {
+          const type = match[1];
+          const data = match[2];
+          
+          if (includeTypes.includes(type)) {
+            // Unescape content to restore original newlines
+            const unescapedData = unescapeLogContent(data);
+            
+            if (type === 'STDOUT') {
+              stdout.push(unescapedData);
+            } else if (type === 'STDERR') {
+              stderr.push(unescapedData);
+            } else if (type === 'EXIT') {
+              exitCode = parseInt(data) || data;  // EXIT code doesn't need unescaping
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to read log ${logFile.path}: ${err.message}`);
+    }
+  }
+  
+  return {
+    stdout: stdout.join(''),
+    stderr: stderr.join(''),
+    exit_code: exitCode
+  };
+}
+
+/**
+ * Search across all log files
+ * 
+ * @param {string} sessionId - Session ID
+ * @param {string} query - Search query
+ * @param {object} options - { limit, task_id }
+ * @returns {array} Array of matching entries
+ */
+function searchLogs(sessionId, query, options = {}) {
+  const { limit = 50, taskId = null } = options;
+  const results = [];
+  const queryLower = query.toLowerCase();
+  
+  const currentLogNum = getCurrentLogNum(sessionId);
+  
+  for (let num = 0; num <= currentLogNum; num++) {
+    const logPath = getLogFilePath(sessionId, num);
+    if (!fs.existsSync(logPath)) continue;
+    
+    try {
+      const content = fs.readFileSync(logPath, 'utf8');
+      const lines = content.split('\n');
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        // Parse log entry
+        const entryPattern = /^\[([^\]]+)\] \[([^\]]+)\] \[([^\]]+)\] (.*)$/;
+        const match = line.match(entryPattern);
+        
+        if (match) {
+          const timestamp = match[1];
+          const entryTaskId = match[2];
+          const type = match[3];
+          const data = match[4];
+          
+          // Filter by task_id if specified
+          if (taskId && entryTaskId !== taskId) continue;
+          
+          // Search in data (search in escaped format, but return unescaped)
+          if (data.toLowerCase().includes(queryLower)) {
+            results.push({
+              timestamp,
+              task_id: entryTaskId,
+              type,
+              content: unescapeLogContent(data),  // Return unescaped content
+              log_num: num
+            });
+            
+            if (results.length >= limit) {
+              return results;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to search log ${logPath}: ${err.message}`);
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * List log files for a session
+ */
+function listLogs(sessionId) {
+  const logs = [];
+  const files = fs.readdirSync(SESSIONS_DIR);
+  const logPattern = new RegExp(`^${sessionId}(?:\\.(\\d+))?\\.log$`);
+  
+  for (const file of files) {
+    const match = file.match(logPattern);
+    if (!match) continue;
+    
+    const num = match[1] ? parseInt(match[1]) : 0;
+    const filePath = path.join(SESSIONS_DIR, file);
+    const stats = fs.statSync(filePath);
+    
+    logs.push({
+      num,
+      file,
+      path: filePath,
+      size: stats.size,
+      size_formatted: formatBytes(stats.size),
+      modified: stats.mtime
+    });
+  }
+  
+  // Sort by log number (newest first)
+  return logs.sort((a, b) => b.num - a.num);
+}
+
 /**
  * Close (no-op for JSON storage)
  */
@@ -964,6 +1321,17 @@ module.exports = {
   searchArchives,
   getSessionInfo,
   ARCHIVE_CONFIG,
+  
+  // Log operations (NEW)
+  appendToLog,
+  readTaskLog,
+  searchLogs,
+  listLogs,
+  getLogFilePath,
+  getCurrentLogNum,
+  LOG_CONFIG,
+  escapeLogContent,
+  unescapeLogContent,
   
   // Database
   close
