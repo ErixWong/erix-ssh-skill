@@ -52,3 +52,6 @@ hosts/
 
 # Task tracking files
 tasks/
+
+# Kilo CLI config
+.kilo/
