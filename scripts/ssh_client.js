@@ -356,7 +356,7 @@ function exec(params) {
     term: ptyConfig.term
   });
   
-  output({ success: true, task_id: taskId, message: 'Command submitted' });
+  output({ submitted: params.command, task_id: taskId });
 }
 
 /**
@@ -523,7 +523,7 @@ async function sudo(params) {
     password: pwResult.password  // may be null, session manager will use cached password
   });
   
-  output({ success: true, task_id: taskId, message: 'Sudo command submitted' });
+  output({ submitted: `sudo ${params.command}`, task_id: taskId });
 }
 
 /**
@@ -663,7 +663,16 @@ function taskOutput(params) {
   const taskOutput = db.getTaskOutput(taskId);
   if (!taskOutput) return output({ success: false, error: 'Task not found' });
   
-  output({ success: true, ...taskOutput });
+  // Truncate output to first 500 chars
+  const truncated = taskOutput.output && taskOutput.output.length > 500 
+    ? taskOutput.output.substring(0, 500) + '...' 
+    : taskOutput.output;
+  
+  output({ 
+    status: taskOutput.status,
+    exit_code: taskOutput.exit_code,
+    output: truncated
+  });
 }
 
 /**
@@ -792,7 +801,7 @@ function sftpList(params) {
     path: params.path
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP list command submitted' });
+  output({ submitted: `sftp-list ${params.path}`, task_id: taskId });
 }
 
 /**
@@ -819,7 +828,7 @@ function sftpDownload(params) {
     local: params.local
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP download command submitted' });
+  output({ submitted: `sftp-download ${params.remote} -> ${params.local}`, task_id: taskId });
 }
 
 /**
@@ -846,7 +855,7 @@ function sftpUpload(params) {
     remote: params.remote
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP upload command submitted' });
+  output({ submitted: `sftp-upload ${params.local} -> ${params.remote}`, task_id: taskId });
 }
 
 /**
@@ -871,7 +880,7 @@ function sftpStat(params) {
     path: params.path
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP stat command submitted' });
+  output({ submitted: `sftp-stat ${params.path}`, task_id: taskId });
 }
 
 /**
@@ -896,7 +905,7 @@ function sftpMkdir(params) {
     path: params.path
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP mkdir command submitted' });
+  output({ submitted: `sftp-mkdir ${params.path}`, task_id: taskId });
 }
 
 /**
@@ -921,7 +930,7 @@ function sftpRmdir(params) {
     path: params.path
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP rmdir command submitted' });
+  output({ submitted: `sftp-rmdir ${params.path}`, task_id: taskId });
 }
 
 /**
@@ -946,7 +955,7 @@ function sftpDelete(params) {
     path: params.path
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP delete command submitted' });
+  output({ submitted: `sftp-delete ${params.path}`, task_id: taskId });
 }
 
 /**
@@ -976,7 +985,7 @@ function sftpRename(params) {
     new_path: newPath
   });
   
-  output({ success: true, task_id: taskId, message: 'SFTP rename command submitted' });
+  output({ submitted: `sftp-rename ${oldPath} -> ${newPath}`, task_id: taskId });
 }
 
 /**

@@ -1,0 +1,57 @@
+version: '3.8'
+
+# MarkItDown API + MCP 双服务部署配置（无端口映射）
+# 同时启用 RESTful API 和 MCP HTTP 服务
+
+services:
+  # MarkItDown RESTful API Server
+  markitdown-api:
+    image: ericwong/markitdown:0.1.6b2-ocr-mcp-api
+    container_name: markitdown-api
+    restart: unless-stopped
+    working_dir: /workdir
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - MARKITDOWN_LLM_MODEL=${MARKITDOWN_LLM_MODEL:-}
+      - MARKITDOWN_ENABLE_PLUGINS=true
+      - MARKITDOWN_API_HOST=0.0.0.0
+      - MARKITDOWN_API_PORT=8000
+    volumes:
+      - /docker/markitdown/workdir:/workdir
+    command: ["markitdown-api", "--host", "0.0.0.0", "--port", "8000"]
+    networks:
+      erixProd:
+        ipv4_address: 172.20.0.60
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O- http://localhost:8000/health 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MarkItDown MCP HTTP Server
+  markitdown-mcp:
+    image: ericwong/markitdown:0.1.6b2-ocr-mcp-api
+    container_name: markitdown-mcp
+    restart: unless-stopped
+    working_dir: /workdir
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - MARKITDOWN_LLM_MODEL=${MARKITDOWN_LLM_MODEL:-}
+      - MARKITDOWN_ENABLE_PLUGINS=true
+    volumes:
+      - /docker/markitdown/workdir:/workdir
+    command: ["markitdown-mcp", "--http", "--host", "0.0.0.0", "--port", "3001"]
+    networks:
+      erixProd:
+        ipv4_address: 172.20.0.61
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O- http://localhost:3001/health 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  erixProd:
+    external: true
