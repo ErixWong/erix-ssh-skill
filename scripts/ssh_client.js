@@ -1177,9 +1177,9 @@ function help() {
   console.log('  --term TERM            Terminal type (default: xterm-256color)');
   console.log('');
   console.log('Output Options:');
-  console.log('  --tail N               Return last N characters of output (default: 4096 if no option given)');
+  console.log('  --tail N               Return last N characters of output');
   console.log('  --head N               Return first N characters of output');
-  console.log('  --full                 Return complete output (no truncation)');
+  console.log('  --full                 Return complete output (default behavior)');
   console.log('');
   console.log('Sudo Password Options (in order of priority):');
   console.log('  --password-file FILE   Read password from file');
