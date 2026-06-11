@@ -72,10 +72,40 @@ function sendCommand(cmd) {
   return cmdId;
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Wait for manager PID file and process readiness
+ */
+async function waitForManagerStart(pidFile, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (fs.existsSync(pidFile)) {
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'));
+
+      if (!isNaN(pid)) {
+        try {
+          process.kill(pid, 0);
+          return { success: true, pid };
+        } catch {
+          // PID file exists but process is not ready yet or has exited.
+        }
+      }
+    }
+
+    await wait(100);
+  }
+
+  return { success: false, error: 'Timed out waiting for manager to start' };
+}
+
 /**
  * Start the manager
  */
-function startManager() {
+async function startManager() {
   const { spawn } = require('child_process');
   
   const pidFile = path.join(DATA_DIR, 'manager.pid');
@@ -96,15 +126,27 @@ function startManager() {
   });
   
   child.unref();
-  
-  setTimeout(() => {
-    if (fs.existsSync(pidFile)) {
-      const pid = parseInt(fs.readFileSync(pidFile, 'utf-8'));
-      output({ success: true, message: 'Manager started', pid });
-    } else {
-      output({ success: false, error: 'Failed to start manager' });
-    }
-  }, 500);
+
+  const childError = new Promise(resolve => {
+    child.once('error', err => resolve({ success: false, error: err.message }));
+    child.once('exit', code => {
+      if (code !== 0 && code !== null) {
+        resolve({ success: false, error: `Manager exited early with code ${code}` });
+      }
+    });
+  });
+
+  const result = await Promise.race([
+    waitForManagerStart(pidFile, 5000),
+    childError
+  ]);
+
+  if (result && result.success) {
+    output({ success: true, message: 'Manager started', pid: result.pid });
+    return;
+  }
+
+  output(result || { success: false, error: 'Failed to start manager' });
 }
 
 /**
@@ -199,6 +241,53 @@ function readConfigFile(configPath) {
   } catch (err) {
     return { error: `Failed to read config file: ${err.message}` };
   }
+}
+
+function getSessionConfigOrNull(sessionId) {
+  return db.getSessionConfig(sessionId);
+}
+
+function normalizeBase64(input) {
+  return input.replace(/\s+/g, '');
+}
+
+function decodeBase64Command(encoded) {
+  const normalized = normalizeBase64(encoded || '');
+  if (!normalized) {
+    return { error: 'command-base64 is required' };
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
+    return { error: 'command-base64 must be valid base64' };
+  }
+
+  try {
+    const buffer = Buffer.from(normalized, 'base64');
+    if (buffer.length === 0) {
+      return { error: 'command-base64 decoded to empty string' };
+    }
+
+    const roundTrip = buffer.toString('base64');
+    if (roundTrip !== normalized) {
+      return { error: 'command-base64 must be strict base64 without invalid characters' };
+    }
+
+    const command = buffer.toString('utf8');
+    if (!command) {
+      return { error: 'command-base64 decoded to empty string' };
+    }
+
+    return { command };
+  } catch (err) {
+    return { error: `command-base64 decode error: ${err.message}` };
+  }
+}
+
+function parsePositiveIntOption(value, name) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { error: `${name} must be a positive integer` };
+  }
+  return { value: parsed };
 }
 
 /**
@@ -326,13 +415,23 @@ function exec(params) {
   const sessionId = params.session;
   
   if (!sessionId) return output({ success: false, error: 'session is required' });
-  if (!params.command) return output({ success: false, error: 'command is required' });
+  if (!params.command && !params.command_base64) return output({ success: false, error: 'command or command-base64 is required' });
+  if (params.command && params.command_base64) return output({ success: false, error: 'command and command-base64 are mutually exclusive' });
+  
+  let finalCommand;
+  if (params.command_base64) {
+    const decoded = decodeBase64Command(params.command_base64);
+    if (decoded.error) return output({ success: false, error: decoded.error });
+    finalCommand = decoded.command;
+  } else {
+    finalCommand = params.command;
+  }
   
   const session = db.getSession(sessionId);
   if (!session) return output({ success: false, error: 'Session not found' });
   
-  // Get default PTY config from session (set via config file)
-  const defaultPty = session.config?.defaultPty || {};
+  const sessionConfig = getSessionConfigOrNull(sessionId) || {};
+  const defaultPty = sessionConfig.defaultPty || {};
   
   // Priority: CLI params > config file defaults > hardcoded defaults
   const ptyConfig = {
@@ -343,20 +442,22 @@ function exec(params) {
   };
   
   const taskId = db.generateId('task');
-  db.createTask(taskId, sessionId, params.command);
+  db.createTask(taskId, sessionId, finalCommand);
   
   sendCommand({
     action: 'exec',
     session_id: sessionId,
     task_id: taskId,
-    command: params.command,
+    command: finalCommand,
     pty: ptyConfig.pty,
     cols: ptyConfig.cols,
     rows: ptyConfig.rows,
     term: ptyConfig.term
   });
   
-  output({ submitted: params.command, task_id: taskId });
+  const submitResult = { submitted: finalCommand, task_id: taskId };
+  if (params.command_base64) submitResult.command_base64_submitted = true;
+  output(submitResult);
 }
 
 /**
@@ -657,22 +758,41 @@ function markRead(params) {
  */
 function taskOutput(params) {
   const taskId = params.task;
-  
+
   if (!taskId) return output({ success: false, error: 'task is required' });
-  
-  const taskOutput = db.getTaskOutput(taskId);
+  if (params.full && (params.tail || params.head)) return output({ success: false, error: 'full cannot be combined with tail or head' });
+  if (params.tail && params.head) return output({ success: false, error: 'tail and head are mutually exclusive' });
+
+  const options = {};
+  if (params.full) {
+    // no tail/head, return complete output
+  } else if (params.tail) {
+    const parsed = parsePositiveIntOption(params.tail, 'tail');
+    if (parsed.error) return output({ success: false, error: parsed.error });
+    options.tail = parsed.value;
+  } else if (params.head) {
+    const parsed = parsePositiveIntOption(params.head, 'head');
+    if (parsed.error) return output({ success: false, error: parsed.error });
+    options.head = parsed.value;
+  }
+
+  const taskOutput = db.getTaskOutput(taskId, options);
   if (!taskOutput) return output({ success: false, error: 'Task not found' });
-  
-  // Truncate output to first 500 chars
-  const truncated = taskOutput.output && taskOutput.output.length > 500 
-    ? taskOutput.output.substring(0, 500) + '...' 
-    : taskOutput.output;
-  
-  output({ 
+
+  const result = {
     status: taskOutput.status,
     exit_code: taskOutput.exit_code,
-    output: truncated
-  });
+    output: taskOutput.output,
+    stderr: taskOutput.stderr,
+    output_length: taskOutput.output_length,
+    stderr_length: taskOutput.stderr_length
+  };
+  if (taskOutput.stdout_head_truncated) result.stdout_head_truncated = true;
+  if (taskOutput.stdout_tail_truncated) result.stdout_tail_truncated = true;
+  if (taskOutput.stderr_head_truncated) result.stderr_head_truncated = true;
+  if (taskOutput.stderr_tail_truncated) result.stderr_tail_truncated = true;
+
+  output(result);
 }
 
 /**
@@ -686,17 +806,28 @@ function taskStatus(params) {
   const task = db.getTask(taskId);
   if (!task) return output({ success: false, error: 'Task not found' });
   
-  output({ 
+  const result = { 
     success: true,
     task_id: task.id,
     session_id: task.session_id,
     command: task.command,
     status: task.status,
     exit_code: task.exit_code,
-    created_at: task.created_at,
-    has_output: task.output && task.output.length > 0,
-    has_error: task.stderr && task.stderr.length > 0
-  });
+    created_at: task.created_at
+  };
+
+  if (task.log_num !== undefined) {
+    result.log_num = task.log_num;
+    try {
+      const fsc = require('fs');
+      const logPath = db.getLogFilePath(task.session_id, task.log_num);
+      if (fsc.existsSync(logPath)) {
+        result.log_size = fsc.statSync(logPath).size;
+      }
+    } catch (_) {}
+  }
+  
+  output(result);
 }
 
 /**
@@ -722,7 +853,8 @@ function reconnect(params) {
     return output({ success: false, error: 'Session is already connected' });
   }
   
-  if (!session.config) {
+  const sessionConfig = getSessionConfigOrNull(sessionId);
+  if (!sessionConfig) {
     return output({ success: false, error: 'Session config not found, cannot reconnect' });
   }
   
@@ -730,7 +862,7 @@ function reconnect(params) {
   sendCommand({
     action: 'connect',
     session_id: sessionId,
-    config: session.config
+    config: sessionConfig
   });
   
   db.updateSessionStatus(sessionId, 'connecting');
@@ -1037,10 +1169,17 @@ function help() {
   console.log('  --config FILE          Read connection config from file (JSON or key-value format)');
   console.log('');
   console.log('Exec Options:');
+  console.log('  --command CMD          Command to execute on remote server');
+  console.log('  --command-base64 B64   Command to execute, base64-encoded (avoids shell quoting issues)');
   console.log('  --pty                  Allocate a pseudo-terminal (for interactive programs)');
   console.log('  --cols N               Terminal width in columns (default: 120)');
   console.log('  --rows N               Terminal height in rows (default: 24)');
   console.log('  --term TERM            Terminal type (default: xterm-256color)');
+  console.log('');
+  console.log('Output Options:');
+  console.log('  --tail N               Return last N characters of output (default: 4096 if no option given)');
+  console.log('  --head N               Return first N characters of output');
+  console.log('  --full                 Return complete output (no truncation)');
   console.log('');
   console.log('Sudo Password Options (in order of priority):');
   console.log('  --password-file FILE   Read password from file');
@@ -1090,6 +1229,9 @@ function help() {
   console.log('  node ssh_client.js sudo --session sess_xxx --command "apt update" --password-file ~/.sudo_pw');
   console.log('  node ssh_client.js history --session sess_xxx');
   console.log('  node ssh_client.js output --task task_xxx');
+  console.log('  node ssh_client.js output --task task_xxx --tail 2000');
+  console.log('  node ssh_client.js output --task task_xxx --head 1000');
+  console.log('  node ssh_client.js exec --session sess_xxx --command-base64 ZGYgLWg=');
   console.log('');
   console.log('SFTP Examples:');
   console.log('  node ssh_client.js sftp-list --session sess_xxx --path /home/user');
@@ -1116,7 +1258,7 @@ async function main() {
   const params = parseArgs(args.slice(1));
   
   switch (command) {
-    case 'start-manager': startManager(); break;
+    case 'start-manager': await startManager(); break;
     case 'stop-manager': stopManager(); break;
     case 'connect': connect(params); break;
     case 'exec': exec(params); break;

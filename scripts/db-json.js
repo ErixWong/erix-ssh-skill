@@ -69,28 +69,55 @@ function generateId(prefix = 'sess') {
   return `${prefix}_${timestamp}_${random}`;
 }
 
-/**
- * Read JSON file safely
- */
-function readJsonFile(filePath, defaultValue = null) {
-  try {
-    if (!fs.existsSync(filePath)) {
-      return defaultValue;
-    }
-    const content = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(content);
-  } catch (error) {
-    console.error(`Error reading ${filePath}:`, error.message);
-    return defaultValue;
-  }
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
- * Write JSON file safely
+ * Read JSON file safely with retry on parse failure
+ */
+function readJsonFile(filePath, defaultValue = null) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return defaultValue;
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(content);
+    } catch (error) {
+      if (attempt < 3 && (error instanceof SyntaxError || error.message.includes('Unexpected end of JSON'))) {
+        const delayMs = 50 * attempt;
+        if (typeof Atomics !== 'undefined') {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+        } else {
+          const start = Date.now();
+          while (Date.now() - start < delayMs) { /* busy wait */ }
+        }
+        continue;
+      }
+      console.error(`Error reading ${filePath}:`, error.message);
+      return defaultValue;
+    }
+  }
+  console.error(`Error reading ${filePath}: exhausted retries`);
+  return defaultValue;
+}
+
+/**
+ * Write JSON file safely using atomic write (tmp + rename)
  */
 function writeJsonFile(filePath, data) {
   ensureDirectories();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  const dir = path.dirname(filePath);
+  const tmpPath = path.join(dir, `.${path.basename(filePath)}.tmp.${process.pid}.${Date.now()}`);
+  const content = JSON.stringify(data, null, 2);
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+    throw err;
+  }
 }
 
 /**
@@ -153,7 +180,8 @@ function createSession(sessionId, config) {
     port: config.port || 22,
     username: config.username,
     private_key: config.private_key,
-    passphrase: config.passphrase ? '***REDACTED***' : undefined
+    passphrase: config.passphrase ? '***REDACTED***' : undefined,
+    defaultPty: config.defaultPty || null
     // password is intentionally NOT saved to disk
   };
   
@@ -201,6 +229,15 @@ function getSession(sessionId) {
     unread_count: getUnreadCount(sessionId),
     message_count: data.messages.length
   };
+}
+
+/**
+ * Get stored session config for internal reuse.
+ */
+function getSessionConfig(sessionId) {
+  const data = loadSessionData(sessionId);
+  if (!data || !data.session) return null;
+  return data.session.config || null;
 }
 
 /**
@@ -400,18 +437,19 @@ function listTasks(sessionId) {
  * If task has log_num, read full output from log file
  * Otherwise, return truncated output from JSON (legacy compatibility)
  */
-function getTaskOutput(taskId) {
+function getTaskOutput(taskId, options = {}) {
   const task = getTask(taskId);
   if (!task) return null;
-  
-  // If task has log reference, read full output from log file
+
   if (task.log_num !== undefined) {
     const logOutput = readTaskLog(task.session_id, taskId, {
       logNum: task.log_num,
-      logOffset: task.log_offset
+      logOffset: task.log_offset,
+      tail: options.tail,
+      head: options.head
     });
-    
-    return {
+
+    const result = {
       task_id: task.id,
       session_id: task.session_id,
       command: task.command,
@@ -421,11 +459,16 @@ function getTaskOutput(taskId) {
       completed_at: task.completed_at || task.updated_at,
       output: logOutput.stdout,
       stderr: logOutput.stderr,
-      output_length: task.output_length || logOutput.stdout.length,
-      stderr_length: task.stderr_length || logOutput.stderr.length,
+      output_length: task.output_length || logOutput.stdout_length,
+      stderr_length: task.stderr_length || logOutput.stderr_length,
       log_num: task.log_num,
       log_offset: task.log_offset
     };
+    if (logOutput.stdout_head_truncated) result.stdout_head_truncated = true;
+    if (logOutput.stdout_tail_truncated) result.stdout_tail_truncated = true;
+    if (logOutput.stderr_head_truncated) result.stderr_head_truncated = true;
+    if (logOutput.stderr_tail_truncated) result.stderr_tail_truncated = true;
+    return result;
   }
   
   // Legacy: return output from JSON (truncated)
@@ -983,11 +1026,28 @@ function getLogFilePath(sessionId, logNum = 0) {
  * Get current log number (find the latest log file)
  */
 function getCurrentLogNum(sessionId) {
-  let num = 0;
-  while (fs.existsSync(getLogFilePath(sessionId, num))) {
-    num++;
+  const logNumbers = getSessionLogNumbers(sessionId);
+  if (logNumbers.length === 0) return 0;
+  return logNumbers[logNumbers.length - 1];
+}
+
+/**
+ * List all existing log file numbers for a session.
+ */
+function getSessionLogNumbers(sessionId) {
+  if (!fs.existsSync(SESSIONS_DIR)) return [];
+  const files = fs.readdirSync(SESSIONS_DIR);
+  const escapedSessionId = escapeRegex(sessionId);
+  const logPattern = new RegExp(`^${escapedSessionId}(?:\\.(\\d+))?\\.log$`);
+  const logNumbers = [];
+
+  for (const file of files) {
+    const match = file.match(logPattern);
+    if (!match) continue;
+    logNumbers.push(match[1] ? parseInt(match[1], 10) : 0);
   }
-  return num > 0 ? num - 1 : 0;
+
+  return logNumbers.sort((a, b) => a - b);
 }
 
 /**
@@ -1103,6 +1163,34 @@ function appendToLog(sessionId, taskId, type, content) {
 }
 
 /**
+ * Parse a structured log line.
+ */
+function parseLogLine(line) {
+  if (!line || line[0] !== '[') return null;
+
+  const timestampEnd = line.indexOf(']');
+  if (timestampEnd === -1) return null;
+
+  const taskStart = line.indexOf('[', timestampEnd + 2);
+  const taskEnd = taskStart === -1 ? -1 : line.indexOf(']', taskStart + 1);
+  if (taskStart === -1 || taskEnd === -1) return null;
+
+  const typeStart = line.indexOf('[', taskEnd + 2);
+  const typeEnd = typeStart === -1 ? -1 : line.indexOf(']', typeStart + 1);
+  if (typeStart === -1 || typeEnd === -1) return null;
+
+  const contentStart = typeEnd + 2;
+  if (contentStart > line.length) return null;
+
+  return {
+    timestamp: line.substring(1, timestampEnd),
+    task_id: line.substring(taskStart + 1, taskEnd),
+    type: line.substring(typeStart + 1, typeEnd),
+    data: line.substring(contentStart)
+  };
+}
+
+/**
  * Read log content for a specific task
  * 
  * @param {string} sessionId - Session ID
@@ -1116,60 +1204,40 @@ function readTaskLog(sessionId, taskId, options = {}) {
   const stdout = [];
   const stderr = [];
   let exitCode = null;
-  
-  // Determine which log files to read
-  const logFiles = [];
-  if (logNum !== null) {
-    // Read specific log file
-    const logPath = getLogFilePath(sessionId, logNum);
-    if (fs.existsSync(logPath)) {
-      logFiles.push({ num: logNum, path: logPath });
-    }
-  } else {
-    // Read all log files
-    const currentLogNum = getCurrentLogNum(sessionId);
-    for (let num = 0; num <= currentLogNum; num++) {
-      const logPath = getLogFilePath(sessionId, num);
-      if (fs.existsSync(logPath)) {
-        logFiles.push({ num, path: logPath });
-      }
-    }
-  }
-  
-  // Parse log entries
-  const taskPattern = new RegExp(`^\\[[^\\]]+\\] \\[${taskId}\\] \\[([^\\]]+)\\] (.*)$`);
-  
+  const sessionLogNumbers = getSessionLogNumbers(sessionId);
+  const logFiles = sessionLogNumbers
+    .filter(num => logNum === null || num >= logNum)
+    .map(num => ({ num, path: getLogFilePath(sessionId, num) }));
+
+  let taskCompleted = false;
+
   for (const logFile of logFiles) {
+    if (taskCompleted) break;
+
     try {
-      const content = fs.readFileSync(logFile.path, 'utf8');
+      const fileBuffer = fs.readFileSync(logFile.path);
+      const startOffset = logOffset !== null && logFile.num === logNum ? Math.max(0, logOffset) : 0;
+      const content = startOffset > 0 ? fileBuffer.slice(startOffset).toString('utf8') : fileBuffer.toString('utf8');
       const lines = content.split('\n');
       
       for (const line of lines) {
         if (!line.trim()) continue;
-        
-        // Skip if offset is specified and we're before it
-        if (logOffset !== null && logFile.num === logNum) {
-          // Rough offset check - skip lines until we're past the offset
-          // This is approximate; for exact offset we'd need byte counting
-        }
-        
-        const match = line.match(taskPattern);
-        if (match) {
-          const type = match[1];
-          const data = match[2];
-          
-          if (includeTypes.includes(type)) {
-            // Unescape content to restore original newlines
-            const unescapedData = unescapeLogContent(data);
-            
-            if (type === 'STDOUT') {
-              stdout.push(unescapedData);
-            } else if (type === 'STDERR') {
-              stderr.push(unescapedData);
-            } else if (type === 'EXIT') {
-              exitCode = parseInt(data) || data;  // EXIT code doesn't need unescaping
-            }
-          }
+
+        const entry = parseLogLine(line);
+        if (!entry || entry.task_id !== taskId) continue;
+
+        if (!includeTypes.includes(entry.type)) continue;
+
+        const unescapedData = unescapeLogContent(entry.data);
+
+        if (entry.type === 'STDOUT') {
+          stdout.push(unescapedData);
+        } else if (entry.type === 'STDERR') {
+          stderr.push(unescapedData);
+        } else if (entry.type === 'EXIT') {
+          exitCode = /^-?\d+$/.test(entry.data) ? parseInt(entry.data, 10) : entry.data;
+          taskCompleted = true;
+          break;
         }
       }
     } catch (err) {
@@ -1177,11 +1245,39 @@ function readTaskLog(sessionId, taskId, options = {}) {
     }
   }
   
-  return {
+  const result = {
     stdout: stdout.join(''),
     stderr: stderr.join(''),
-    exit_code: exitCode
+    exit_code: exitCode,
+    stdout_length: 0,
+    stderr_length: 0
   };
+  result.stdout_length = result.stdout.length;
+  result.stderr_length = result.stderr.length;
+
+  if (options.tail) {
+    const tailLen = options.tail;
+    if (result.stdout.length > tailLen) {
+      result.stdout = result.stdout.substring(result.stdout.length - tailLen);
+      result.stdout_head_truncated = true;
+    }
+    if (result.stderr.length > tailLen) {
+      result.stderr = result.stderr.substring(result.stderr.length - tailLen);
+      result.stderr_head_truncated = true;
+    }
+  }
+  if (options.head) {
+    const headLen = options.head;
+    if (result.stdout.length > headLen) {
+      result.stdout = result.stdout.substring(0, headLen);
+      result.stdout_tail_truncated = true;
+    }
+    if (result.stderr.length > headLen) {
+      result.stderr = result.stderr.substring(0, headLen);
+      result.stderr_tail_truncated = true;
+    }
+  }
+  return result;
 }
 
 /**
@@ -1196,10 +1292,9 @@ function searchLogs(sessionId, query, options = {}) {
   const { limit = 50, taskId = null } = options;
   const results = [];
   const queryLower = query.toLowerCase();
-  
-  const currentLogNum = getCurrentLogNum(sessionId);
-  
-  for (let num = 0; num <= currentLogNum; num++) {
+  const logNumbers = getSessionLogNumbers(sessionId);
+
+  for (const num of logNumbers) {
     const logPath = getLogFilePath(sessionId, num);
     if (!fs.existsSync(logPath)) continue;
     
@@ -1210,26 +1305,17 @@ function searchLogs(sessionId, query, options = {}) {
       for (const line of lines) {
         if (!line.trim()) continue;
         
-        // Parse log entry
-        const entryPattern = /^\[([^\]]+)\] \[([^\]]+)\] \[([^\]]+)\] (.*)$/;
-        const match = line.match(entryPattern);
-        
-        if (match) {
-          const timestamp = match[1];
-          const entryTaskId = match[2];
-          const type = match[3];
-          const data = match[4];
-          
-          // Filter by task_id if specified
-          if (taskId && entryTaskId !== taskId) continue;
-          
-          // Search in data (search in escaped format, but return unescaped)
-          if (data.toLowerCase().includes(queryLower)) {
+        const entry = parseLogLine(line);
+
+        if (entry) {
+          if (taskId && entry.task_id !== taskId) continue;
+
+          if (entry.data.toLowerCase().includes(queryLower)) {
             results.push({
-              timestamp,
-              task_id: entryTaskId,
-              type,
-              content: unescapeLogContent(data),  // Return unescaped content
+              timestamp: entry.timestamp,
+              task_id: entry.task_id,
+              type: entry.type,
+              content: unescapeLogContent(entry.data),
               log_num: num
             });
             
@@ -1253,7 +1339,8 @@ function searchLogs(sessionId, query, options = {}) {
 function listLogs(sessionId) {
   const logs = [];
   const files = fs.readdirSync(SESSIONS_DIR);
-  const logPattern = new RegExp(`^${sessionId}(?:\\.(\\d+))?\\.log$`);
+  const escapedSessionId = escapeRegex(sessionId);
+  const logPattern = new RegExp(`^${escapedSessionId}(?:\\.(\\d+))?\\.log$`);
   
   for (const file of files) {
     const match = file.match(logPattern);
@@ -1289,6 +1376,7 @@ module.exports = {
   generateId,
   createSession,
   getSession,
+  getSessionConfig,
   updateSessionStatus,
   getSessionSummary,
   listSessions,
@@ -1329,6 +1417,7 @@ module.exports = {
   listLogs,
   getLogFilePath,
   getCurrentLogNum,
+  getSessionLogNumbers,
   LOG_CONFIG,
   escapeLogContent,
   unescapeLogContent,
