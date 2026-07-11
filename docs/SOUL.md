@@ -241,6 +241,27 @@
    - `scripts/session_manager.js`: 输出写入日志文件
    - `docs/design/log-output-design.md`: 设计文档
 
+### 2026-05-12 (容器部署方式)
+
+**问题**: 更新 MinerU 容器时，先用 `docker run` 创建容器，后被指出违反 1Panel 编排管理原则。
+
+**教训**:
+
+1. **容器部署优先使用 docker compose**：
+   - 原容器无 compose 文件时，应先创建 `docker-compose.yml`
+   - 再用 `docker compose up -d` 启动
+
+2. **工作流程**：
+   ```bash
+   # 1. 在 /docker/<应用>/ 创建 docker-compose.yml
+   # 2. 使用 sudo bash -c 'cd /docker/<应用> && docker compose up -d'
+   ```
+
+3. **好处**：
+   - 配置可追溯
+   - 方便后续管理（up/down/logs）
+   - 符合运维规范
+
 ---
 
 ✌Bazinga！

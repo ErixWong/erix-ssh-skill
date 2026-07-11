@@ -28,6 +28,7 @@ references/
 | [`interactive-sudo-design.md`](interactive-sudo-design.md) | ✅ 已实现 | Sudo 命令 PTY 支持 |
 | [`portainerce-design.md`](portainerce-design.md) | ✅ 已实现 | Portainer CE 管理脚本 |
 | [`SESSION_ISOLATION_SIMPLE.md`](SESSION_ISOLATION_SIMPLE.md) | 🚧 设计中 | Session ID 作为访问凭证 |
+| [`../tasks/active/task-001-mcp-interface/MCP_HTTP_DESIGN.md`](../tasks/active/task-001-mcp-interface/MCP_HTTP_DESIGN.md) | 🚧 设计中 | MCP stdio、MCP HTTP 与普通 HTTP API 改造草案 |
 
 ## 参考文档
 
@@ -49,6 +50,7 @@ references/
 - 存储相关: [`archive-design.md`](archive-design.md)
 - 安全相关: [`SESSION_ISOLATION_SIMPLE.md`](SESSION_ISOLATION_SIMPLE.md)
 - Portainer 管理: [`portainerce-design.md`](portainerce-design.md)
+- MCP 与 HTTP 接口改造: [`../tasks/active/task-001-mcp-interface/MCP_HTTP_DESIGN.md`](../tasks/active/task-001-mcp-interface/MCP_HTTP_DESIGN.md)
 
 ## 文档维护规则
 
